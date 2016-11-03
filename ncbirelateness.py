@@ -1,7 +1,7 @@
 import os
 import gc
 import random
-import math
+import time
 import numpy as np
 import utils
 from relateness import RelatenessModel
@@ -90,22 +90,7 @@ def train_dataset(model, dataset, ctdset):
         train_num += len(losses)
         del score_plus, score_minus, rsents_plus, rsents_minus, rroots_plus, rroots_minus, losses
         gc.collect()
-        # if lmesh in ctdset['meshes']:
-        #     rindex = ctdset['meshes'].index(lmesh)
-        # else:
-        #     continue
-        # rroot = ctdset['trees'][rindex]
-        # loss = model.train(lroot, rroot, 5)
-        # losses.append(loss)
-        # for j in xrange(10):
-        #     nrindex = random.randint(0, len(ctdset['trees']) - 1)
-        #     if nrindex == rindex:
-        #         continue
-        #     rroot = ctdset['trees'][rindex]
-        #     loss = model.train(lroot, rroot, 1)
-        #     losses.append(loss)
-        # if i%500 == 0:
-        #     print 'train %d samples' % i
+
     return total_loss
 
 def evaluate_dataset(model, dataset, ctdset):
@@ -137,17 +122,31 @@ def evaluate_dataset(model, dataset, ctdset):
 
 def train():
     data_dir = '../data/ncbi'
+    output_dir = '../outputs'
+    model_dir = '../models'
+
+    curtime = time.strftime('%Y-%m-%d-%H-%M-%S')
+    
+    model_name = curtime + '.npy'
+    model_path = os.path.join(model_dir, model_name)
+
+    output_name = curtime + '.txt'
+    output_path = os.path.join(output_dir, output_name)
+    output = open(output_path, 'w')
+
     vocab, data = read_dataset(data_dir)
     train_set, dev_set, test_set, ctd_set = data['train'], data['dev'], data['test'], data['ctd']
     max_degree = data['max_degree']
-    print 'train', len(train_set['trees'])
-    print 'dev', len(dev_set['trees'])
-    print 'test', len(test_set['trees'])
+    
+    output.write('train : %d\n' % len(train_set['trees']))
+    output.write('dev: %d\n' % len(dev_set['trees']))
+    output.write('test: %d\n' % len(test_set['trees']))
     
     num_emb = vocab.size()
     max_label = 5
-    print 'number of embeddings', num_emb
-    print 'max label', max_label
+    
+    output.write('number of embeddings: %d\n' % num_emb)
+    output.write('max label: %d\n' % max_label)
 
     random.seed(SEED)
     np.random.seed(SEED)
@@ -163,15 +162,17 @@ def train():
     glove_vecs, glove_words, glove_word2idx = [], [], []
     model.embeddings.set_value(embeddings)
     for epoch in xrange(NUM_EPOCHS):
-        print 'epoch', epoch
+        output.write('epoch: %d\n' % epoch)
         loss = train_dataset(model, train_set, ctd_set)
-        print 'avg_loss', loss
+        output.write('avg_loss: %f\n' % loss)
         dev_score = evaluate_dataset(model, dev_set, ctd_set)
-        print 'dev score', dev_score
+        output.write('dev score: %f\n' % dev_score)
     
-    print 'finish training'
+    output.write('finish training at' + time.strftime('%Y-%m-%d-%H-%M-%S') + '\n')
     test_score = evaluate_dataset(model, test_set, ctd_set)
-    print 'test score', test_score
+    output.write('test score: %f\n' % test_score)
+    utils.save_model(model, model_path)
+    output.write('all finished at' + time.strftime('%Y-%m-%d-%H-%M-%S'))
 
 if __name__ == '__main__':
     train()
