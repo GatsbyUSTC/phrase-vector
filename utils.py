@@ -3,6 +3,7 @@ import theano
 import os
 from vocab import Vocab
 from node import Node
+import time
 
 
 theano.config.floatX = 'float32'
@@ -191,7 +192,15 @@ def map_tokens_labels(node, sentence, fine_grained=False):
     [map_tokens_labels(child, sentence, fine_grained) 
     for child in node.children if child]
 
+def save_model(model, path):
+    params = []
+    for param in model.params:
+        value = param.get_value()
+        params.append(value)
+    np.save(params, path)
 
-
-
+def load_model(model, path):
+    params = np.load(path)
+    for value, param in zip(params, model.params):
+        param.set_value(value)
 
