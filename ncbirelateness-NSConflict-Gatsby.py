@@ -50,7 +50,8 @@ def train_dataset(model, dataset, ctdset):
     
     train_num, total_loss = 0, 0.0
 
-    for lmesh, lroot in zip(dataset['meshes'], dataset['trees']):
+    for i, lroot in enumerate(dataset['trees']):
+        lmesh = dataset['meshes'][i]
         score_plus, score_minus = [], []
         rsents_plus, rsents_minus = [], []
         rroots_plus, rroots_minus = [], []
@@ -58,22 +59,18 @@ def train_dataset(model, dataset, ctdset):
         lsent = model.generate(lroot)
         if lmesh not in ctdset['meshes']:
             continue
-            
-        for rmesh, rroot in zip(ctdset['meshes'], ctdset['trees']):
-            if lmesh == rmesh:
+        for j, ctdmesh in enumerate(ctdset['meshes']):
+            if lmesh == ctdmesh:
+                rroot = ctdset['trees'][j]
                 rroots_plus.append(rroot)
                 rsent = model.generate(rroot)
                 rsents_plus.append(rsent)
-
-        while len(rroots_minus) < 200:
-            random_index = random.randint(0, len(ctdset['meshes'])-1)
-            if ctdset['meshes'][random_index] == lmesh:
-                continue
-            rroot = ctdset['trees'][random_index]
-            rroots_minus.append(rroot)
-            rsent = model.generate(rroot)
-            rsents_minus.append(rsent)
-
+            elif random.randint(0,100) == 0:
+                rroot = ctdset['trees'][j]
+                rroots_minus.append(rroot)
+                rsent = model.generate(rroot)
+                rsents_minus.append(rsent)
+        
         for rsent in rsents_plus:
             score = model.getscore(lsent, rsent)
             score_plus.append(score)
@@ -81,15 +78,13 @@ def train_dataset(model, dataset, ctdset):
             score = model.getscore(lsent, rsent)
             score_minus.append(score)
 
-        for i in xrange(5):
-            plus_index = score_plus.index(max(score_plus))
-            loss = model.train(lroot, rroots_plus[plus_index], 5)
-            losses.append(loss)
-            minus_index = score_minus.index(max(score_minus))
-            loss = model.train(lroot, rroots_minus[minus_index], 1)
-            del score_minus[minus_index]
-            del rroots_minus[minus_index]
-            losses.append(loss)
+        
+        plus_index = score_plus.index(max(score_plus))
+        loss = model.train(lroot, rroots_plus[plus_index], 5)
+        losses.append(loss)
+        minus_index = score_minus.index(max(score_minus))
+        loss = model.train(lroot, rroots_minus[minus_index], 1)
+        losses.append(loss)
 
         total_loss = (total_loss * train_num + sum(losses)) / (train_num + len(losses))
         train_num += len(losses)
@@ -105,7 +100,8 @@ def evaluate_dataset(model, dataset, ctdset):
         rsent = model.generate(rroot)
         rsents.append(rsent)
 
-    for lmesh, lroot in zip(dataset['meshes'], dataset['trees']):
+    for i, lroot in enumerate(dataset['trees']):
+        lmesh = dataset['meshes'][i]
         if lmesh not in ctdset['meshes']:
             continue
         lsent = model.generate(lroot)
@@ -119,7 +115,7 @@ def evaluate_dataset(model, dataset, ctdset):
         # if rindex == prindex:
             num_correct += 1
         num_pred += 1
-    del rsents, pred_ys
+    del rsents
     gc.collect()
     return float(num_correct) / float(num_pred)
 
@@ -144,23 +140,17 @@ def train():
     
     output.write('train : %d\n' % len(train_set['trees']))
     output.write('dev: %d\n' % len(dev_set['trees']))
-    output.write('test: %d\n\n' % len(test_set['trees']))
+    output.write('test: %d\n' % len(test_set['trees']))
     
     num_emb = vocab.size()
     max_label = 5
     
     output.write('number of embeddings: %d\n' % num_emb)
     output.write('max label: %d\n' % max_label)
-    output.flush()
 
     random.seed(SEED)
     np.random.seed(SEED)
     model = RelatenessModel(num_emb, max_degree, False)
-
-    output.write('num_emb: %d\n' % num_emb)
-    output.write('max_degree: %d\n' % max_degree)
-    output.write('learing_rate: %f\n\n' % model.learning_rate)
-    output.flush()
 
     embeddings = model.embeddings.get_value()
     glove_vecs = np.load(os.path.join(data_dir, 'glove.npy'))
@@ -177,14 +167,12 @@ def train():
         output.write('avg_loss: %f\n' % loss)
         dev_score = evaluate_dataset(model, dev_set, ctd_set)
         output.write('dev score: %f\n' % dev_score)
-        output.flush()
-    output.write('\nstart training at ' + curtime + '\n')
-    output.write('finish training at ' + time.strftime('%Y-%m-%d-%H-%M-%S') + '\n')
+    
+    output.write('finish training at' + time.strftime('%Y-%m-%d-%H-%M-%S') + '\n')
     test_score = evaluate_dataset(model, test_set, ctd_set)
-    output.write('\ntest score: %f\n' % test_score)
+    output.write('test score: %f\n' % test_score)
     utils.save_model(model, model_path)
-    output.write('\nall finished at' + time.strftime('%Y-%m-%d-%H-%M-%S'))
-    output.close()
+    output.write('all finished at' + time.strftime('%Y-%m-%d-%H-%M-%S'))
 
 if __name__ == '__main__':
     train()
