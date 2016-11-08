@@ -123,7 +123,9 @@ def evaluate_dataset(model, dataset, ctdset):
         # if rindex == prindex:
             num_correct += 1
         num_pred += 1
-    del rsents, pred_ys
+        del pred_ys
+        gc.collect()
+    del rsents
     gc.collect()
     return float(num_correct) / float(num_pred)
 
@@ -149,7 +151,9 @@ def test_dataset(model, dataset, ctdset, output):
         else:
             output.write(str(i) + '/t' + str(prindex) + '\t' + lmesh + '\n')
         num_pred += 1
-    del rsents, pred_ys
+        del pred_ys
+        gc.collect()
+    del rsents
     gc.collect()
     return float(num_correct) / float(num_pred)
 
