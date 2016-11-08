@@ -83,6 +83,7 @@ def train_dataset(model, dataset, ctdset):
 
         if max(score_plus) > max(score_minus):
             right_num += 1
+        train_num += 1
 
         for i in xrange(5):
             plus_index = score_plus.index(max(score_plus))
@@ -272,10 +273,10 @@ def train_test():
         dev_score = evaluate_dataset(model, dev_set, ctd_set)
         output.write('dev score: %f\n' % dev_score)
         output.flush()
-    output.write('\nevaluate on test set')
+    output.write('\nevaluate on test set\n')
     test_score = test_dataset(model, test_set, ctd_set, output)
     output.write('test score is %f\n' % test_score)
-    output.write('\nevaluate on train set')
+    output.write('\nevaluate on train set\n')
     train_score = test_dataset(model, train_set, ctd_set, output)
     output.write('train score is %f\n' % train_score)
 
