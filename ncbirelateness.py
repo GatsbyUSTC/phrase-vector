@@ -248,7 +248,8 @@ def train_test():
     np.random.seed(SEED)
     model = RelatenessModel(num_emb, max_degree, False)
 
-    output.write('num_emb: %d\n' % num_emb)
+    output.write('trainable embeddings: %s\n' % str(model.trainable_embeddings))
+    output.write('reg : %f\n' % model.reg)
     output.write('max_degree: %d\n' % max_degree)
     output.write('embedding dim: %d\n' % model.emb_dim)
     output.write('hidden dim: %d\n' % model.hidden_dim)
@@ -271,7 +272,6 @@ def train_test():
         dev_score = evaluate_dataset(model, dev_set, ctd_set)
         output.write('dev score: %f\n' % dev_score)
         output.flush()
-    utils.load_model(model, model_path)
     output.write('\nevaluate on test set')
     test_score = test_dataset(model, test_set, ctd_set, output)
     output.write('test score is %f\n' % test_score)
