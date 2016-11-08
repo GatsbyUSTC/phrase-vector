@@ -27,14 +27,28 @@ def create_ctd(ncbi_dir, cp):
             mesh = content[1]
             syns = content[7].strip().split('|')
             if name != '':
+                name = name.replace('-', ' ').lower()
                 ctdname.write(name + '\n')
                 ctdmesh.write(mesh + '\n')
             for syn in syns:
                 if syn != '': 
+                    syn = syn.replace('-', ' ').lower()
                     ctdname.write(syn + '\n')
                     ctdmesh.write(mesh + '\n') 
 
     dependency_parse(namepath, cp)
+
+def get_abbr(abbrpath):
+    abbr = {}
+    with open(abbrpath, 'r') as f:
+        for line in f:
+            pmid, short, full = line.strip().split('\t')
+            if pmid not in abbr:
+                abbr[pmid] = {}
+            abbr[pmid][short] = full
+    
+    return abbr
+
 
 def get_corpus(corpuspath):
     source = dict()
@@ -65,10 +79,10 @@ def get_pmids(pmidpath):
 def create_corpus(ncbi_dir, cp):
     sname = ['train', 'dev', 'test']
     corpus = get_corpus(os.path.join(ncbi_dir, 'Corpus.txt'))
+    abbr = get_abbr(os.path.join(ncbi_dir, 'abbreviations.tsv'))
     for cname in sname:
         pmidpath = os.path.join(ncbi_dir, 'NCBI_corpus_'+cname+'_PMIDs.txt')
         pmids = get_pmids(pmidpath)
-        
         dir = os.path.join(ncbi_dir, cname)
         if not os.path.exists(dir):
             os.mkdir(dir)
@@ -83,6 +97,10 @@ def create_corpus(ncbi_dir, cp):
                 for disease in diseases:
                     dname = disease[0]
                     dmesh = disease[1]
+                    if pmid in abbr:
+                        if dname in abbr[pmid]:
+                            dname = abbr[pmid][dname]
+                    dname = dname.replace('-', ' ').lower()
                     name.write(dname+'\n')
                     if dmesh.find(':') != -1:
                         mesh.write(dmesh+'\n')
@@ -150,6 +168,41 @@ def read_embeddings_into_numpy(ncbi_dir):
     print 'known words: ', len(words)
     print 'unknown words: ', (vocab.size() - len(words)) 
 
+def read_w2v_into_numpy(ncbi_dir):
+    vocab_path = os.path.join(ncbi_dir, 'vocab-cased.txt')
+    w2v_path = '../../data/gd_model.bin'
+
+    vocab = Vocab()
+    vocab.load(vocab_path)
+
+    words, array = [], []
+    with open(w2v_path, "rb") as f:
+        header = f.readline()
+        vocab_size, layer1_size = map(int, header.split())
+        binary_len = np.dtype('float32').itemsize * layer1_size
+        for line in xrange(vocab_size):
+            word = []
+            while True:
+                ch = f.read(1)
+                if ch == ' ':
+                    word = ''.join(word)
+                    break
+                if ch != '\n':
+                    word.append(ch)   
+            if word in vocab.word2idx:
+               embedding = np.fromstring(f.read(binary_len), dtype='float32')
+               words.append(word)
+               array.append(embedding)  
+            else:
+                f.read(binary_len)
+   
+    np.save(os.path.join(ncbi_dir, 'words.npy'), words)
+    np.save(os.path.join(ncbi_dir, 'glove.npy'), array)
+
+    print 'vocab size: ', vocab.size()
+    print 'known words: ', len(words)
+    print 'unknown words: ', (vocab.size() - len(words)) 
+
 if __name__ == '__main__':
     print '=' * 80
     print 'prerocessing ncbi corpus'
@@ -173,7 +226,7 @@ if __name__ == '__main__':
         lowercase=False)  
 
 
-    read_embeddings_into_numpy(ncbi_dir)
+    read_w2v_into_numpy(ncbi_dir)
     
     
 

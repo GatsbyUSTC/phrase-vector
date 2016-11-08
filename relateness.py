@@ -8,16 +8,16 @@ DIR = '../data/ncpi'
 GLOVE_DIR = '../data/glove'
 FINE_GRAINED = False
 DEPENDENCY = True
-SEED = 24
+SEED = 68
 REG = 1e-4
 BATCH_SIZE = 10
 NUM_EPOCHS = 10
-LEARNING_RATE = 0.05
-EMB_DIM = 300
-HIDDEN_DIM = 150
+LEARNING_RATE = 0.02
+EMB_DIM = 200
+HIDDEN_DIM = 200
 OUTPUT_DIM = 1
 MAX_LABEL = 5 #label y in [1,K]
-TRAINABLE_EMBEDDINGS = True
+TRAINABLE_EMBEDDINGS = False
 
 class RelatenessModel(treelstm.ChildSumTreeLSTM):
     

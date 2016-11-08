@@ -4,6 +4,7 @@ import os
 from vocab import Vocab
 from node import Node
 import time
+import pickle
 
 
 theano.config.floatX = 'float32'
@@ -194,13 +195,15 @@ def map_tokens_labels(node, sentence, fine_grained=False):
 
 def save_model(model, path):
     params = []
-    for param in model.params:
-        value = param.get_value()
-        params.append(value)
-    np.save(params, path)
+    with open(path, 'w') as f:
+        for param in model.params:
+            value = param.get_value()
+            params.append(value)
+        pickle.dump(params, f)
 
 def load_model(model, path):
-    params = np.load(path)
-    for value, param in zip(params, model.params):
-        param.set_value(value)
+    with open(path, 'r') as f:
+        params = pickle.load(f)
+        for value, param in zip(params, model.params):
+            param.set_value(value)
 
