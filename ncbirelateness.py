@@ -136,7 +136,7 @@ def test_dataset(model, dataset, ctdset, output):
         rsent = model.generate(rroot)
         rsents.append(rsent)
 
-    for i, lmesh, lroot in enumerate(zip(dataset['meshes'], dataset['trees'])):
+    for i, (lmesh, lroot) in enumerate(zip(dataset['meshes'], dataset['trees'])):
         if lmesh not in ctdset['meshes']:
             continue
         lsent = model.generate(lroot)
@@ -149,77 +149,13 @@ def test_dataset(model, dataset, ctdset, output):
         if lmesh == ctdset['meshes'][prindex]:
             num_correct += 1
         else:
-            output.write(str(i) + '/t' + str(prindex) + '\t' + lmesh + '\n')
+            output.write(str(i) + '\t' + lmesh + '\t' + prindex + '\n')
         num_pred += 1
         del pred_ys
         gc.collect()
     del rsents
     gc.collect()
     return float(num_correct) / float(num_pred)
-
-
-def train():
-    data_dir = '../data/ncbi'
-    output_dir = '../outputs'
-
-    curtime = time.strftime('%Y-%m-%d-%H-%M-%S')
-    
-    model_name = curtime + '.model'
-    model_path = os.path.join(output_dir, model_name)
-
-    output_name = curtime + '.txt'
-    output_path = os.path.join(output_dir, output_name)
-    output = open(output_path, 'w')
-
-    vocab, data = read_dataset(data_dir)
-    train_set, dev_set, test_set, ctd_set = data['train'], data['dev'], data['test'], data['ctd']
-    max_degree = data['max_degree']
-    
-    output.write('train : %d\n' % len(train_set['trees']))
-    output.write('dev: %d\n' % len(dev_set['trees']))
-    output.write('test: %d\n\n' % len(test_set['trees']))
-    
-    num_emb = vocab.size()
-    max_label = 5
-    
-    output.write('number of embeddings: %d\n' % num_emb)
-    output.write('max label: %d\n' % max_label)
-    output.flush()
-
-    random.seed(SEED)
-    np.random.seed(SEED)
-    model = RelatenessModel(num_emb, max_degree, False)
-
-    output.write('num_emb: %d\n' % num_emb)
-    output.write('max_degree: %d\n' % max_degree)
-    output.write('embedding dim: %d\n' % model.emb_dim)
-    output.write('hidden dim: %d\n' % model.hidden_dim)
-    output.write('learing_rate: %f\n\n' % model.learning_rate)
-    output.flush()
-
-    embeddings = model.embeddings.get_value()
-    glove_vecs = np.load(os.path.join(data_dir, 'glove.npy'))
-    glove_words = np.load(os.path.join(data_dir, 'words.npy'))
-    glove_word2idx = dict((word, i) for i, word in enumerate(glove_words))
-    for i, word in enumerate(vocab.words):
-        if word in glove_word2idx:
-            embeddings[i] = glove_vecs[glove_word2idx[word]]
-    glove_vecs, glove_words, glove_word2idx = [], [], []
-    model.embeddings.set_value(embeddings)
-    for epoch in xrange(NUM_EPOCHS):
-        output.write('epoch: %d\n' % epoch)
-        prec = train_dataset(model, train_set, ctd_set)
-        output.write('avg_prec: %f\n' % prec)
-        dev_score = evaluate_dataset(model, dev_set, ctd_set)
-        output.write('dev score: %f\n' % dev_score)
-        output.flush()
-    output.write('\nstart training at ' + curtime + '\n')
-    output.write('finish training at ' + time.strftime('%Y-%m-%d-%H-%M-%S') + '\n')
-    test_score = evaluate_dataset(model, test_set, ctd_set)
-    output.write('\ntest score: %f\n' % test_score)
-    utils.save_model(model, model_path)
-    output.write('\nall finished at' + time.strftime('%Y-%m-%d-%H-%M-%S'))
-    output.close()
 
 def train_test():
     data_dir = '../data/ncbi'
@@ -279,10 +215,10 @@ def train_test():
         output.flush()
     output.write('\nevaluate on test set\n')
     test_score = test_dataset(model, test_set, ctd_set, output)
-    output.write('test score is %f\n' % test_score)
+    output.write('\ntest score is %f\n' % test_score)
     output.write('\nevaluate on train set\n')
     train_score = test_dataset(model, train_set, ctd_set, output)
-    output.write('train score is %f\n' % train_score)
+    output.write('\ntrain score is %f\n' % train_score)
 
     utils.save_model(model, model_path)
     output.close()   
