@@ -18,6 +18,13 @@ def read_mesh(meshpath):
             meshes.append(line.strip())
     return meshes
 
+def read_name(namepath):
+    names = []
+    with open(namepath, 'r') as f:
+        for line in f:
+            names.append(line.strip())
+    return names
+
 def read_dataset(ncbi_dir):
     vocab = Vocab()
     vocab.load(os.path.join(ncbi_dir, 'vocab-cased.txt'))
@@ -33,11 +40,13 @@ def read_dataset(ncbi_dir):
         degree, trees = utils.read_trees(os.path.join(sub_dir,'name.parents'))
         sentences = utils.read_sentences(os.path.join(sub_dir, 'name.toks'), vocab)
         meshes = read_mesh(os.path.join(sub_dir, 'mesh.txt'))
+        names = read_name(os.path.join(sub_dir, 'name.txt'))
         for sentence, tree in zip(sentences, trees):
             utils.map_tokens_labels(tree, sentence, False)
         cur_dataset = {}
         cur_dataset['trees'] = trees
         cur_dataset['meshes'] = meshes
+        cur_dataset['names'] = names
         data[name] = cur_dataset
 
         max_degree = max(max_degree, degree)
@@ -57,15 +66,34 @@ def train_dataset(model, dataset, ctdset):
         # losses = []
         lsent = model.generate(lroot)
         if lmesh not in ctdset['meshes']:
-            continue
-            
+            continue    
         for rmesh, rroot in zip(ctdset['meshes'], ctdset['trees']):
             if lmesh == rmesh:
                 rroots_plus.append(rroot)
                 rsent = model.generate(rroot)
                 rsents_plus.append(rsent)
-
-        while len(rroots_minus) < 200:
+        
+        first_index = ctdset['meshes'].index(lmesh)
+        last_index = first_index + len(rroots_plus)
+        before_index = max(0, first_index - 10)
+        after_index = min(last_index + 10, len(ctdset['meshes']))
+        if before_index < first_index:
+            for random_index in xrange(before_index, first_index):
+                if ctdset['meshes'][random_index] == lmesh:
+                    continue
+                rroot = ctdset['trees'][random_index]
+                rroots_minus.append(rroot)
+                rsent = model.generate(rroot)
+                rsents_minus.append(rsent)
+        if after_index > last_index:
+            for random_index in xrange(last_index, after_index):
+                if ctdset['meshes'][random_index] == lmesh:
+                    continue
+                rroot = ctdset['trees'][random_index]
+                rroots_minus.append(rroot)
+                rsent = model.generate(rroot)
+                rsents_minus.append(rsent)            
+        while len(rroots_minus) < 220:
             random_index = random.randint(0, len(ctdset['meshes'])-1)
             if ctdset['meshes'][random_index] == lmesh:
                 continue
@@ -102,15 +130,22 @@ def train_dataset(model, dataset, ctdset):
 
     return float(right_num) / float(train_num)
 
-def evaluate_dataset(model, dataset, ctdset):
+def evaluate_dataset(model, dataset, ctdset, output):
     num_correct, num_pred = 0, 0
     rsents = []
     for rroot in ctdset['trees']:
         rsent = model.generate(rroot)
         rsents.append(rsent)
-    
-    for lmesh, lroot in zip(dataset['meshes'], dataset['trees']):
+    cm_num_correct, cm_num_total = 0, 0
+    no_that_mesh = 0
+    for lname, lmesh, lroot in zip(dataset['names'], dataset['meshes'], dataset['trees']):
         if lmesh not in ctdset['meshes']:
+            no_that_mesh += 1
+            continue
+        if lname in ctdset['names']:
+            if ctdset['meshes'][ctdset['names'].index(lname)] == lmesh:
+                cm_num_correct += 1
+            cm_num_total += 1
             continue
         lsent = model.generate(lroot)
         pred_ys = []
@@ -125,6 +160,11 @@ def evaluate_dataset(model, dataset, ctdset):
         num_pred += 1
         del pred_ys
         gc.collect()
+    output.write("no that mesh: %d\n" % no_that_mesh)
+    output.write('cm_num_correct: %d\n' % cm_num_correct)
+    output.write('cm_num_total: %d\n' % cm_num_total)
+    output.write('num_pred_correct: %d\n' % num_correct)
+    output.write('num_pred_total: %d\n' % num_pred)
     del rsents
     gc.collect()
     return float(num_correct) / float(num_pred)
@@ -135,9 +175,17 @@ def test_dataset(model, dataset, ctdset, output):
     for rroot in ctdset['trees']:
         rsent = model.generate(rroot)
         rsents.append(rsent)
-
-    for i, (lmesh, lroot) in enumerate(zip(dataset['meshes'], dataset['trees'])):
+    
+    cm_num_correct, cm_num_total = 0, 0
+    no_that_mesh = 0
+    for i, (lname, lmesh, lroot) in enumerate(zip(dataset['names'], dataset['meshes'], dataset['trees'])):
         if lmesh not in ctdset['meshes']:
+            no_that_mesh += 1            
+            continue
+        if lname in ctdset['names']:
+            if ctdset['meshes'][ctdset['names'].index(lname)] == lmesh:
+                cm_num_correct += 1
+            cm_num_total += 1
             continue
         lsent = model.generate(lroot)
         pred_ys = []
@@ -149,10 +197,15 @@ def test_dataset(model, dataset, ctdset, output):
         if lmesh == ctdset['meshes'][prindex]:
             num_correct += 1
         else:
-            output.write(str(i) + '\t' + lmesh + '\t' + prindex + '\n')
+            output.write(str(i) + '\t' + str(lmesh) + '\t' + str(prindex) + '\n')
         num_pred += 1
         del pred_ys
         gc.collect()
+    output.write("no that mesh: %d\n" % no_that_mesh)
+    output.write('cm_num_correct: %d\n' % cm_num_correct)
+    output.write('cm_num_total: %d\n' % cm_num_total)
+    output.write('num_pred_correct: %d\n' % num_correct)
+    output.write('num_pred_total: %d\n' % num_pred)
     del rsents
     gc.collect()
     return float(num_correct) / float(num_pred)
@@ -210,9 +263,10 @@ def train_test():
         output.write('epoch: %d\n' % epoch)
         score = train_dataset(model, train_set, ctd_set)
         output.write('avg_score: %f\n' % score)
-        dev_score = evaluate_dataset(model, dev_set, ctd_set)
+        dev_score = evaluate_dataset(model, dev_set, ctd_set, output)
         output.write('dev score: %f\n' % dev_score)
         output.flush()
+    utils.save_model(model, model_path)
     output.write('\nevaluate on test set\n')
     test_score = test_dataset(model, test_set, ctd_set, output)
     output.write('\ntest score is %f\n' % test_score)
@@ -220,7 +274,6 @@ def train_test():
     train_score = test_dataset(model, train_set, ctd_set, output)
     output.write('\ntrain score is %f\n' % train_score)
 
-    utils.save_model(model, model_path)
     output.close()   
 
 
