@@ -17,7 +17,7 @@ EMB_DIM = 200
 HIDDEN_DIM = 200
 OUTPUT_DIM = 1
 MAX_LABEL = 5 #label y in [1,K]
-TRAINABLE_EMBEDDINGS = False
+TRAINABLE_EMBEDDINGS = True
 
 class RelatenessModel(treelstm.ChildSumTreeLSTM):
     
@@ -30,11 +30,12 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
         self.reg = REG
 
         self.embeddings = theano.shared(self.init_matrix([self.num_emb, self.emb_dim]))
-        if self.trainable_embeddings:
-            self.params.append(self.embeddings)
+
 
         self.output_fn = self.create_output_fn()
-
+        
+        if self.trainable_embeddings:
+            self.params.append(self.embeddings)
         # self._batch_train = self._create_batch_train()
         self._train, self._predict, self._generate, self._score = self._create_train_and_predict() 
 

@@ -204,6 +204,6 @@ def save_model(model, path):
 def load_model(model, path):
     with open(path, 'r') as f:
         params = pickle.load(f)
-        for value, param in zip(params, model.params):
+        for value, param in zip(params, model.params): #trainable embeddings
             param.set_value(value)
 

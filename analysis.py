@@ -31,6 +31,29 @@ def getnames(ncbi_dir):
     return data
 
 def getwrongsamples(outputpath):
-    
+    data = []
+    with open(outputpath, 'r') as ws:
+        for line in ws:
+            content = line.strip().split('\t')
+            oid = int(content[0])
+            rmesh = content[1]
+            wid = int(content[2])
+            data.append((oid, rmesh, wid))
+    return data        
 
 if __name__ == '__main__':
+    ncbi_dir = '../data/ncbi'
+    output_dir = '../outputs'
+
+    ctd = getctd(os.path.join(ncbi_dir, 'CTD_diseases-2015-06-04.tsv'))
+    names = getnames(ncbi_dir)
+    ws = getwrongsamples(os.path.join(output_dir, 'wrongsamples.txt'))
+
+    aopath = os.path.join(output_dir, 'ao.txt')
+    with open(aopath, 'w') as aof:
+        for w in ws:
+            oid, rmesh, wid = w
+            oname = names['train'][oid]
+            rname = ctd[rmesh]
+            wname = names['ctd'][wid]
+            aof.write(oname + '\t' + str(rname) + '\t' + wname + '\n')
