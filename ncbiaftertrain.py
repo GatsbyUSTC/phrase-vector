@@ -55,7 +55,7 @@ def read_dataset(ncbi_dir):
 
     return vocab, data
 
-def getwrongsamples(wspath):
+def get_wrongsamples(wspath):
     data = []
     with open(wspath, 'r') as ws:
         for line in ws:
@@ -69,7 +69,7 @@ def getwrongsamples(wspath):
 def after_train_dataset(model, dataset, ctdset):
     
     right_num, train_num, total_loss = 0, 0, 0.0
-    ws = getwrongsamples('../outputs/ao.txt')
+    ws = get_wrongsamples('../outputs/ao.txt')
     for w in ws:
         score_plus, score_minus = [], []
         rsents_plus, rsents_minus = [], []
