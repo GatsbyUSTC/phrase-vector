@@ -47,6 +47,7 @@ def read_dataset(ncbi_dir):
         cur_dataset['trees'] = trees
         cur_dataset['meshes'] = meshes
         cur_dataset['names'] = names
+        cur_dataset['ws'] = []
         data[name] = cur_dataset
 
         max_degree = max(max_degree, degree)
@@ -55,26 +56,26 @@ def read_dataset(ncbi_dir):
 
     return vocab, data
 
-def get_wrongsamples(wspath):
-    data = []
-    with open(wspath, 'r') as ws:
-        for line in ws:
-            content = line.strip().split('\t')
-            oid = int(content[0])
-            rmesh = content[1]
-            wid = int(content[2])
-            data.append((oid, rmesh, wid))
-    return data  
+def load_wrongsamples(dataset, wspath):
+    with open(wspath, 'r') as wsf:
+        for line in wsf:
+            oid, wid = line.strip().split('\t')
+            dataset['ws'].append((int(oid), int(wid)))
+    
+def save_wrongsamples(dataset, wspath):
+    with open(wspath, 'w') as wsf:
+        for w in dataset['ws']:
+            oid, wid = w
+            wsf.write(str(oid) + '\t' + str(wid))
 
-def after_train_dataset(model, dataset, ctdset):
+def train_dataset(model, dataset, ctdset):
     
     right_num, train_num, total_loss = 0, 0, 0.0
-    ws = get_wrongsamples('../outputs/ao.txt')
-    for w in ws:
+    for w in dataset['ws']:
         score_plus, score_minus = [], []
         rsents_plus, rsents_minus = [], []
         rroots_plus, rroots_minus = [], []
-        oid, wid = w[0], w[2]
+        oid, wid = w[0], w[1]
         lmesh, lroot = dataset['meshes'][oid], dataset['trees'][oid]
         lsent = model.generate(lroot)
         for rmesh, rroot in zip(ctdset['meshes'], ctdset['trees']):
@@ -135,48 +136,11 @@ def evaluate_dataset(model, dataset, ctdset, output):
     for rroot in ctdset['trees']:
         rsent = model.generate(rroot)
         rsents.append(rsent)
-    cm_num_correct, cm_num_total = 0, 0
-    no_that_mesh = 0
-    for lname, lmesh, lroot in zip(dataset['names'], dataset['meshes'], dataset['trees']):
-        if lmesh not in ctdset['meshes']:
-            no_that_mesh += 1
-            continue
-        if lname in ctdset['names']:
-            if ctdset['meshes'][ctdset['names'].index(lname)] == lmesh:
-                cm_num_correct += 1
-            cm_num_total += 1
-            continue
-        lsent = model.generate(lroot)
-        pred_ys = []
-        for rsent in rsents:
-            pred_y = model.getscore(lsent, rsent)
-            pred_ys.append(pred_y)
-
-        prindex = pred_ys.index(max(pred_ys))
-        if lmesh == ctdset['meshes'][prindex]:
-        # if rindex == prindex:
-            num_correct += 1
-        num_pred += 1
-        del pred_ys
-        gc.collect()
-    output.write("no that mesh: %d\n" % no_that_mesh)
-    output.write('cm_num_correct: %d\n' % cm_num_correct)
-    output.write('cm_num_total: %d\n' % cm_num_total)
-    output.write('num_pred_correct: %d\n' % num_correct)
-    output.write('num_pred_total: %d\n' % num_pred)
-    del rsents
-    gc.collect()
-    return float(num_correct) / float(num_pred)
-
-def test_dataset(model, dataset, ctdset, output, ws):
-    num_correct, num_pred = 0, 0
-    rsents = []
-    for rroot in ctdset['trees']:
-        rsent = model.generate(rroot)
-        rsents.append(rsent)
     
     cm_num_correct, cm_num_total = 0, 0
     no_that_mesh = 0
+    del dataset['ws']
+    dataset['ws'] = []
     for i, (lname, lmesh, lroot) in enumerate(zip(dataset['names'], dataset['meshes'], dataset['trees'])):
         if lmesh not in ctdset['meshes']:
             no_that_mesh += 1            
@@ -196,7 +160,7 @@ def test_dataset(model, dataset, ctdset, output, ws):
         if lmesh == ctdset['meshes'][prindex]:
             num_correct += 1
         else:
-            ws.write(str(i) + '\t' + str(lmesh) + '\t' + str(prindex) + '\n')
+           dataset['ws'].append((i, prindex))
         num_pred += 1
         del pred_ys
         gc.collect()
@@ -225,10 +189,6 @@ def train_test():
     output_path = os.path.join(output_dir, output_name)
     output = open(output_path, 'w')
 
-    ws_name = curtime + '.ws'
-    ws_path = os.path.join(output_dir, ws_name)
-    ws = open(ws_path, 'w')
-
     vocab, data = read_dataset(data_dir)
     train_set, dev_set, test_set, ctd_set = data['train'], data['dev'], data['test'], data['ctd']
     max_degree = data['max_degree']
@@ -251,6 +211,9 @@ def train_test():
     old_model_path =  '../outputs/2016-11-10-11-01-42.model'
     utils.load_model(model, old_model_path)
 
+    old_ws_path = '../outputs/bo.txt'
+    load_wrongsamples(train_set, old_ws_path)
+
     output.write('trainable embeddings: %s\n' % str(model.trainable_embeddings))
     output.write('reg : %f\n' % model.reg)
     output.write('max_degree: %d\n' % max_degree)
@@ -268,24 +231,25 @@ def train_test():
             embeddings[i] = glove_vecs[glove_word2idx[word]]
     glove_vecs, glove_words, glove_word2idx = [], [], []
     model.embeddings.set_value(embeddings)
+    
     for epoch in xrange(NUM_EPOCHS):
         output.write('epoch: %d\n' % epoch)
-        score = after_train_dataset(model, train_set, ctd_set)
-        output.write('avg_score: %f\n' % score)
-        dev_score = evaluate_dataset(model, dev_set, ctd_set, output)
-        output.write('dev score: %f\n' % dev_score)
+        score = train_dataset(model, train_set, ctd_set)
+        score = evaluate_dataset(model, train_set, ctd_set, output)
+        output.write('train score: %f\n' % score)
+        score = evaluate_dataset(model, dev_set, ctd_set, output)
+        output.write('dev score: %f\n' % score)
         output.flush()
     utils.save_model(model, model_path)
     output.write('\nevaluate on test set\n')
     test_score = evaluate_dataset(model, test_set, ctd_set, output)
     output.write('\ntest score is %f\n' % test_score)
-    output.write('\nevaluate on train set\n')
-    train_score = test_dataset(model, train_set, ctd_set, output, ws)
-    output.write('\ntrain score is %f\n' % train_score)
+    for name in ['train', 'dev', 'test']:
+        ws_name = curtime + '.ws' + name
+        ws_path = os.path.join(output_dir, ws_name)
+        save_wrongsamples(dataset[name], ws_path)
 
     output.close()
-    ws.close()   
-
 
 if __name__ == '__main__':
    	train_test()
