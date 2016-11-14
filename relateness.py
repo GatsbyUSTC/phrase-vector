@@ -37,7 +37,7 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
         if self.trainable_embeddings:
             self.params.append(self.embeddings)
         # self._batch_train = self._create_batch_train()
-        self._train, self._predict, self._generate, self._score = self._create_train_and_predict() 
+        self._train, self._train_em, self._predict, self._generate, self._score = self._create_train_and_predict() 
 
     def _create_train_and_predict(self):
         lx = T.ivector(name='lx')
@@ -59,13 +59,15 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
         
         loss = self.kl_divergence(p, pred_p)
         updates = self.gradient_descent(loss)
+        em_updates = self.gd_embeddings(loss)
 
         _train = theano.function([lx, rx, ltree, rtree, p] , [loss], updates=updates) 
+        _train_em = theano.function([lx, rx, ltree, rtree, p], [loss], updates=em_updates)
         _predict = theano.function([lx, rx, ltree, rtree] , [pred_p])
         _generate = theano.function([lx, ltree], [lsent])
         _score = theano.function([lsent, rsent], [pred_p])
 
-        return _train, _predict, _generate, _score
+        return _train, _train_em, _predict, _generate, _score
         
     def train(self, lroot, rroot, y):
         lx, ltree = utils.gen_inputs(lroot, self.degree, False)
@@ -80,6 +82,19 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
         loss = self._train(lx, rx, ltree[:,:-1], rtree[:,:-1], p)[0]
         return loss
         # return 0, 0
+    
+    def train_em(self, lroot, rroot, y):
+        lx, ltree = utils.gen_inputs(lroot, self.degree, False)
+        rx, rtree = utils.gen_inputs(rroot, self.degree, False)
+        p = np.zeros([self.max_label], dtype=theano.config.floatX)
+        if y == np.floor(y):
+            p[int(np.floor(y)) - 1] = 1
+        else:
+            p[int(np.floor(y))] = y - np.floor(y)
+            p[int(np.floor(y)) - 1] = np.floor(y) - y + 1
+        # if lx.shape[0] > 1 and rx.shape[0] > 1:
+        loss = self._train_em(lx, rx, ltree[:,:-1], rtree[:,:-1], p)[0]
+        return loss
     
     def predict(self, lroot, rroot):
         lx, ltree = utils.gen_inputs(lroot, self.degree, False)
@@ -124,3 +139,13 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
     def loss_with_l2_reg(self, kl, batch_size):
         return kl/batch_size + 0.5 * self.reg * sum(map(lambda  x: T.sqr(x).sum(), self.params))
 
+    def gd_embeddings(self, loss):
+        grad = T.grad(loss, self.embeddings)
+        grad_norm = T.sqrt(T.sqr(grad).sum())
+        updates = OrderedDict()
+        not_finite = T.or_(T.isnan(grad_norm), T.isinf(grad_norm))
+        scaling_den = T.maximum(5.0, grad_norm)
+        for n, (param, grad) in enumerate(zip(self.params, grad)):
+        grad = T.switch(not_finite, 0.1 * param, grad * (5.0 /scaling_den))
+        updates[self.embeddings] = self.embeddings - self.learning_rate * grad
+        return updates
