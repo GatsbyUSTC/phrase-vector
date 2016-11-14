@@ -47,7 +47,8 @@ def read_dataset(ncbi_dir):
         cur_dataset['trees'] = trees
         cur_dataset['meshes'] = meshes
         cur_dataset['names'] = names
-        cur_dataset['ws'] = []
+        cur_dataset['wso'] = []
+        cur_dataset['wsw'] = []
         data[name] = cur_dataset
 
         max_degree = max(max_degree, degree)
@@ -60,23 +61,25 @@ def load_wrongsamples(dataset, wspath):
     with open(wspath, 'r') as wsf:
         for line in wsf:
             oid, wid = line.strip().split('\t')
-            dataset['ws'].append((int(oid), int(wid)))
+            dataset['wso'].append(int(oid))
+            dataset['wsw'].append(int(wid))
     
 def save_wrongsamples(dataset, wspath):
     with open(wspath, 'w') as wsf:
-        for w in dataset['ws']:
-            oid, wid = w
-            wsf.write(str(oid) + '\t' + str(wid))
+        for oid, wid in zip(dataset['wso'], dataset['wsw']):
+            wsf.write(str(oid) + '\t' + str(wid) + '\n')
 
 def train_dataset(model, dataset, ctdset):
     
     right_num, train_num, total_loss = 0, 0, 0.0
-    for w in dataset['ws']:
+
+    for i, (lmesh, lroot) in enumerate(zip(dataset['meshes'], dataset['trees'])):
+        if lmesh not in ctdset['meshes']:
+            continue
         score_plus, score_minus = [], []
         rsents_plus, rsents_minus = [], []
         rroots_plus, rroots_minus = [], []
-        oid, wid = w[0], w[1]
-        lmesh, lroot = dataset['meshes'][oid], dataset['trees'][oid]
+        
         lsent = model.generate(lroot)
         for rmesh, rroot in zip(ctdset['meshes'], ctdset['trees']):
             if lmesh != rmesh:
@@ -84,16 +87,40 @@ def train_dataset(model, dataset, ctdset):
             rroots_plus.append(rroot)
             rsent = model.generate(rroot)
             rsents_plus.append(rsent)
+        
+        if i in dataset['wso']:
+            index = dataset['wso'].index(i)
+            wid = dataset['wsw'][index]
+            first_index, last_index = max(0, wid - 20), min(wid + 20, len(ctdset['meshes']))
+            for index in xrange(first_index, last_index):
+                rmesh, rroot = ctdset['meshes'][index], ctdset['trees'][index]
+                if rmesh == lmesh:
+                    continue
+                rroots_minus.append(rroot)
+                rsent = model.generate(rroot)
+                rsents_minus.append(rsent)
+        first_index = ctdset['meshes'].index(lmesh)
+        last_index = first_index + len(rroots_plus)
+        before_index = max(0, first_index - 10)
+        after_index = min(last_index + 10, len(ctdset['meshes']))
+        if before_index < first_index:
+            for random_index in xrange(before_index, first_index):
+                if ctdset['meshes'][random_index] == lmesh:
+                    continue
+                rroot = ctdset['trees'][random_index]
+                rroots_minus.append(rroot)
+                rsent = model.generate(rroot)
+                rsents_minus.append(rsent)
+        if after_index > last_index:
+            for random_index in xrange(last_index, after_index):
+                if ctdset['meshes'][random_index] == lmesh:
+                    continue
+                rroot = ctdset['trees'][random_index]
+                rroots_minus.append(rroot)
+                rsent = model.generate(rroot)
+                rsents_minus.append(rsent) 
 
-        first_index, last_index = max(0, wid - 20), min(wid + 20, len(ctdset['meshes']))
-        for index in xrange(first_index, last_index):
-            rmesh, rroot = ctdset['meshes'][index], ctdset['trees'][index]
-            if rmesh == lmesh:
-                continue
-            rroots_minus.append(rroot)
-            rsent = model.generate(rroot)
-            rsents_minus.append(rsent)
-        while len(rroots_minus) < 220:
+        while len(rroots_minus) < 240:
             random_index = random.randint(0, len(ctdset['meshes'])-1)
             if ctdset['meshes'][random_index] == lmesh:
                 continue
@@ -113,7 +140,7 @@ def train_dataset(model, dataset, ctdset):
             right_num += 1
         train_num += 1
 
-        for i in xrange(5):
+        for j in xrange(5):
             plus_index = score_plus.index(max(score_plus))
             loss = model.train(lroot, rroots_plus[plus_index], 5)
             # losses.append(loss)
@@ -139,8 +166,9 @@ def evaluate_dataset(model, dataset, ctdset, output):
     
     cm_num_correct, cm_num_total = 0, 0
     no_that_mesh = 0
-    del dataset['ws']
-    dataset['ws'] = []
+    del dataset['wso']
+    del dataset['wsw']
+    dataset['wso'], dataset['wsw'] = [], []
     for i, (lname, lmesh, lroot) in enumerate(zip(dataset['names'], dataset['meshes'], dataset['trees'])):
         if lmesh not in ctdset['meshes']:
             no_that_mesh += 1            
@@ -160,7 +188,8 @@ def evaluate_dataset(model, dataset, ctdset, output):
         if lmesh == ctdset['meshes'][prindex]:
             num_correct += 1
         else:
-           dataset['ws'].append((i, prindex))
+           dataset['wso'].append(i)
+           dataset['wsw'].append(prindex)
         num_pred += 1
         del pred_ys
         gc.collect()
@@ -211,7 +240,7 @@ def train_test():
     old_model_path =  '../outputs/2016-11-10-11-01-42.model'
     utils.load_model(model, old_model_path)
 
-    old_ws_path = '../outputs/bo.txt'
+    old_ws_path = '../outputs/2016-11-10-11-01-42.ws'
     load_wrongsamples(train_set, old_ws_path)
 
     output.write('trainable embeddings: %s\n' % str(model.trainable_embeddings))
@@ -247,7 +276,7 @@ def train_test():
     for name in ['train', 'dev', 'test']:
         ws_name = curtime + '.ws' + name
         ws_path = os.path.join(output_dir, ws_name)
-        save_wrongsamples(dataset[name], ws_path)
+        save_wrongsamples(data[name], ws_path)
 
     output.close()
 
