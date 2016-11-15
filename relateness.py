@@ -142,10 +142,9 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
     def gd_embeddings(self, loss):
         grad = T.grad(loss, self.embeddings)
         grad_norm = T.sqrt(T.sqr(grad).sum())
-        updates = OrderedDict()
+        updates = {}
         not_finite = T.or_(T.isnan(grad_norm), T.isinf(grad_norm))
         scaling_den = T.maximum(5.0, grad_norm)
-        for n, (param, grad) in enumerate(zip(self.params, grad)):
-        grad = T.switch(not_finite, 0.1 * param, grad * (5.0 /scaling_den))
+        grad = T.switch(not_finite, 0.1 * self.embeddings, grad * (5.0 /scaling_den))
         updates[self.embeddings] = self.embeddings - self.learning_rate * grad
         return updates
