@@ -107,6 +107,7 @@ def create_corpus(ncbi_dir, cp):
                     else:
                         mesh.write('MESH:'+dmesh+'\n')
                     dpmid.write(pmid+'\n')
+            name.flush()
             dependency_parse(namepath, cp)
     
 def dependency_parse(filepath, cp='', tokenize=True):

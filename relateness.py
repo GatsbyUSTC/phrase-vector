@@ -17,7 +17,7 @@ EMB_DIM = 200
 HIDDEN_DIM = 200
 OUTPUT_DIM = 1
 MAX_LABEL = 5 #label y in [1,K]
-TRAINABLE_EMBEDDINGS = True
+TRAINABLE_EMBEDDINGS = False
 
 class RelatenessModel(treelstm.ChildSumTreeLSTM):
     
@@ -140,7 +140,7 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
         return kl/batch_size + 0.5 * self.reg * sum(map(lambda  x: T.sqr(x).sum(), self.params))
 
     def gd_embeddings(self, loss):
-        grad = T.grad(loss, self.embeddings)
+        grad = T.grad(loss, self.embeddings, consider_constant=self.params)
         grad_norm = T.sqrt(T.sqr(grad).sum())
         updates = {}
         not_finite = T.or_(T.isnan(grad_norm), T.isinf(grad_norm))
