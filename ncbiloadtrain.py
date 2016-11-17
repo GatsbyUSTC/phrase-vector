@@ -47,6 +47,8 @@ def read_dataset(ncbi_dir):
         cur_dataset['trees'] = trees
         cur_dataset['meshes'] = meshes
         cur_dataset['names'] = names
+        cur_dataset['wso'] = []
+        cur_dataset['wsw'] = []
         data[name] = cur_dataset
 
         max_degree = max(max_degree, degree)
@@ -55,24 +57,48 @@ def read_dataset(ncbi_dir):
 
     return vocab, data
 
+def load_wrongsamples(dataset, wspath):
+    with open(wspath, 'r') as wsf:
+        for line in wsf:
+            oid, wid = line.strip().split('\t')
+            dataset['wso'].append(int(oid))
+            dataset['wsw'].append(int(wid))
+    
+def save_wrongsamples(dataset, wspath):
+    with open(wspath, 'w') as wsf:
+        for oid, wid in zip(dataset['wso'], dataset['wsw']):
+            wsf.write(str(oid) + '\t' + str(wid) + '\n')
+
 def train_dataset(model, dataset, ctdset):
     
     right_num, train_num, total_loss = 0, 0, 0.0
 
-    for lmesh, lroot in zip(dataset['meshes'], dataset['trees']):
+    for i, (lmesh, lroot) in enumerate(zip(dataset['meshes'], dataset['trees'])):
+        if lmesh not in ctdset['meshes']:
+            continue
         score_plus, score_minus = [], []
         rsents_plus, rsents_minus = [], []
         rroots_plus, rroots_minus = [], []
-        # losses = []
-        lsent = model.generate(lroot)
-        if lmesh not in ctdset['meshes']:
-            continue    
-        for rmesh, rroot in zip(ctdset['meshes'], ctdset['trees']):
-            if lmesh == rmesh:
-                rroots_plus.append(rroot)
-                rsent = model.generate(rroot)
-                rsents_plus.append(rsent)
         
+        lsent = model.generate(lroot)
+        for rmesh, rroot in zip(ctdset['meshes'], ctdset['trees']):
+            if lmesh != rmesh:
+                continue
+            rroots_plus.append(rroot)
+            rsent = model.generate(rroot)
+            rsents_plus.append(rsent)
+        
+        if i in dataset['wso']:
+            index = dataset['wso'].index(i)
+            wid = dataset['wsw'][index]
+            first_index, last_index = max(0, wid - 20), min(wid + 20, len(ctdset['meshes']))
+            for index in xrange(first_index, last_index):
+                rmesh, rroot = ctdset['meshes'][index], ctdset['trees'][index]
+                if rmesh == lmesh:
+                    continue
+                rroots_minus.append(rroot)
+                rsent = model.generate(rroot)
+                rsents_minus.append(rsent)
         first_index = ctdset['meshes'].index(lmesh)
         last_index = first_index + len(rroots_plus)
         before_index = max(0, first_index - 10)
@@ -92,15 +118,16 @@ def train_dataset(model, dataset, ctdset):
                 rroot = ctdset['trees'][random_index]
                 rroots_minus.append(rroot)
                 rsent = model.generate(rroot)
-                rsents_minus.append(rsent)            
-        while len(rroots_minus) < 220:
+                rsents_minus.append(rsent) 
+
+        while len(rroots_minus) < 240:
             random_index = random.randint(0, len(ctdset['meshes'])-1)
             if ctdset['meshes'][random_index] == lmesh:
                 continue
             rroot = ctdset['trees'][random_index]
             rroots_minus.append(rroot)
             rsent = model.generate(rroot)
-            rsents_minus.append(rsent)
+            rsents_minus.append(rsent)           
 
         for rsent in rsents_plus:
             score = model.getscore(lsent, rsent)
@@ -113,7 +140,7 @@ def train_dataset(model, dataset, ctdset):
             right_num += 1
         train_num += 1
 
-        for i in xrange(5):
+        for j in xrange(5):
             plus_index = score_plus.index(max(score_plus))
             loss = model.train(lroot, rroots_plus[plus_index], 5)
             # losses.append(loss)
@@ -136,48 +163,12 @@ def evaluate_dataset(model, dataset, ctdset, output):
     for rroot in ctdset['trees']:
         rsent = model.generate(rroot)
         rsents.append(rsent)
-    cm_num_correct, cm_num_total = 0, 0
-    no_that_mesh = 0
-    for lname, lmesh, lroot in zip(dataset['names'], dataset['meshes'], dataset['trees']):
-        if lmesh not in ctdset['meshes']:
-            no_that_mesh += 1
-            continue
-        if lname in ctdset['names']:
-            if ctdset['meshes'][ctdset['names'].index(lname)] == lmesh:
-                cm_num_correct += 1
-            cm_num_total += 1
-            continue
-        lsent = model.generate(lroot)
-        pred_ys = []
-        for rsent in rsents:
-            pred_y = model.getscore(lsent, rsent)
-            pred_ys.append(pred_y)
-
-        prindex = pred_ys.index(max(pred_ys))
-        if lmesh == ctdset['meshes'][prindex]:
-        # if rindex == prindex:
-            num_correct += 1
-        num_pred += 1
-        del pred_ys
-        gc.collect()
-    output.write("no that mesh: %d\n" % no_that_mesh)
-    output.write('cm_num_correct: %d\n' % cm_num_correct)
-    output.write('cm_num_total: %d\n' % cm_num_total)
-    output.write('num_pred_correct: %d\n' % num_correct)
-    output.write('num_pred_total: %d\n' % num_pred)
-    del rsents
-    gc.collect()
-    return float(num_correct) / float(num_pred)
-
-def test_dataset(model, dataset, ctdset, output):
-    num_correct, num_pred = 0, 0
-    rsents = []
-    for rroot in ctdset['trees']:
-        rsent = model.generate(rroot)
-        rsents.append(rsent)
     
     cm_num_correct, cm_num_total = 0, 0
     no_that_mesh = 0
+    del dataset['wso']
+    del dataset['wsw']
+    dataset['wso'], dataset['wsw'] = [], []
     for i, (lname, lmesh, lroot) in enumerate(zip(dataset['names'], dataset['meshes'], dataset['trees'])):
         if lmesh not in ctdset['meshes']:
             no_that_mesh += 1            
@@ -197,7 +188,8 @@ def test_dataset(model, dataset, ctdset, output):
         if lmesh == ctdset['meshes'][prindex]:
             num_correct += 1
         else:
-            output.write(str(i) + '\t' + str(lmesh) + '\t' + str(prindex) + '\n')
+           dataset['wso'].append(i)
+           dataset['wsw'].append(prindex)
         num_pred += 1
         del pred_ys
         gc.collect()
@@ -215,11 +207,14 @@ def train_test():
     output_dir = '../outputs'
 
     curtime = time.strftime('%Y-%m-%d-%H-%M-%S')
+    output_dir = os.path.join(output_dir, curtime)
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
     
     model_name = curtime + '.model'
     model_path = os.path.join(output_dir, model_name)
 
-    output_name = curtime + '.txt'
+    output_name = curtime + '.ouput'
     output_path = os.path.join(output_dir, output_name)
     output = open(output_path, 'w')
 
@@ -241,9 +236,12 @@ def train_test():
     random.seed(SEED)
     np.random.seed(SEED)
     model = RelatenessModel(num_emb, max_degree, False)
-
+    
     old_model_path =  '../outputs/2016-11-12-13-21-57/2016-11-12-13-21-57.model'
     utils.load_model(model, old_model_path)
+
+    old_ws_path = '../outputs/2016-11-12-13-21-57/2016-11-12-13-21-57.wstrain'
+    load_wrongsamples(train_set, old_ws_path)
 
     output.write('trainable embeddings: %s\n' % str(model.trainable_embeddings))
     output.write('reg : %f\n' % model.reg)
@@ -253,23 +251,34 @@ def train_test():
     output.write('learing_rate: %f\n\n' % model.learning_rate)
     output.flush()
 
+    embeddings = model.embeddings.get_value()
+    glove_vecs = np.load(os.path.join(data_dir, 'glove.npy'))
+    glove_words = np.load(os.path.join(data_dir, 'words.npy'))
+    glove_word2idx = dict((word, i) for i, word in enumerate(glove_words))
+    for i, word in enumerate(vocab.words):
+        if word in glove_word2idx:
+            embeddings[i] = glove_vecs[glove_word2idx[word]]
+    glove_vecs, glove_words, glove_word2idx = [], [], []
+    model.embeddings.set_value(embeddings)
+    
     for epoch in xrange(NUM_EPOCHS):
         output.write('epoch: %d\n' % epoch)
         score = train_dataset(model, train_set, ctd_set)
-        output.write('avg_score: %f\n' % score)
-        dev_score = evaluate_dataset(model, dev_set, ctd_set, output)
-        output.write('dev score: %f\n' % dev_score)
+        score = evaluate_dataset(model, train_set, ctd_set, output)
+        output.write('train score: %f\n' % score)
+        score = evaluate_dataset(model, dev_set, ctd_set, output)
+        output.write('dev score: %f\n' % score)
         output.flush()
     utils.save_model(model, model_path)
     output.write('\nevaluate on test set\n')
-    test_score = test_dataset(model, test_set, ctd_set, output)
+    test_score = evaluate_dataset(model, test_set, ctd_set, output)
     output.write('\ntest score is %f\n' % test_score)
-    output.write('\nevaluate on train set\n')
-    train_score = test_dataset(model, train_set, ctd_set, output)
-    output.write('\ntrain score is %f\n' % train_score)
+    for name in ['train', 'dev', 'test']:
+        ws_name = curtime + '.ws' + name
+        ws_path = os.path.join(output_dir, ws_name)
+        save_wrongsamples(data[name], ws_path)
 
-    output.close()   
-
+    output.close()
 
 if __name__ == '__main__':
    	train_test()

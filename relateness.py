@@ -17,7 +17,7 @@ EMB_DIM = 200
 HIDDEN_DIM = 200
 OUTPUT_DIM = 1
 MAX_LABEL = 5 #label y in [1,K]
-TRAINABLE_EMBEDDINGS = False
+TRAINABLE_EMBEDDINGS = True
 
 class RelatenessModel(treelstm.ChildSumTreeLSTM):
     
