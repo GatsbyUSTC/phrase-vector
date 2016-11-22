@@ -38,7 +38,7 @@ def read_dataset(ncbi_dir):
     max_degree = 0
     for name, sub_dir in zip(dir_names, sub_dirs):
         degree, trees = utils.read_trees(os.path.join(sub_dir,'name.parents'))
-        sentences = utils.read_sentences(os.path.join(sub_dir, 'name.toksl'), vocab)
+        sentences = utils.read_sentences(os.path.join(sub_dir, 'name.tokss'), vocab)
         meshes = read_mesh(os.path.join(sub_dir, 'mesh.txt'))
         names = read_name(os.path.join(sub_dir, 'name.txt'))
         for sentence, tree in zip(sentences, trees):
@@ -238,10 +238,10 @@ def train_test():
     np.random.seed(SEED)
     model = RelatenessModel(num_emb, max_degree, False)
     
-    old_model_path =  '../outputs/2016-11-17-10-33-19/2016-11-17-10-33-19.model'
+    old_model_path =  '../outputs/2016-11-17-10-43-23/2016-11-17-10-43-23.model'
     utils.load_model(model, old_model_path)
 
-    old_ws_path = '../outputs/2016-11-17-10-33-19/2016-11-17-10-33-19.wstrain'
+    old_ws_path = '../outputs/2016-11-17-10-43-23/2016-11-17-10-43-23.wstrain'
     load_wrongsamples(test_set, old_ws_path)
 
     output.write('trainable embeddings: %s\n' % str(model.trainable_embeddings))

@@ -209,7 +209,7 @@ def lemmatize(filepaths):
 
 def read_w2v_into_numpy(ncbi_dir):
     vocab_path = os.path.join(ncbi_dir, 'vocab-cased.txt')
-    w2v_path = '../../data/gd_model.bin'
+    w2v_path = '../../data/stemmed_model.bin'
 
     vocab = Vocab()
     vocab.load(vocab_path)
@@ -261,9 +261,9 @@ if __name__ == '__main__':
 
     stem(glob.glob(os.path.join(ncbi_dir, '*/*.toks')))
 
-    lemmatize(glob.glob(os.path.join(ncbi_dir, '*/*.toks')))
+    # lemmatize(glob.glob(os.path.join(ncbi_dir, '*/*.toks')))
     build_vocab(
-        glob.glob(os.path.join(ncbi_dir, '*/*.toksl')),
+        glob.glob(os.path.join(ncbi_dir, '*/*.tokss')),
         os.path.join(ncbi_dir, 'vocab-cased.txt'),
         lowercase=False)  
 
