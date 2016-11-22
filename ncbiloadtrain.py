@@ -29,7 +29,7 @@ def read_dataset(ncbi_dir):
     vocab = Vocab()
     vocab.load(os.path.join(ncbi_dir, 'vocab-cased.txt'))
     
-    dir_names = ['train', 'dev', 'test', 'ctd']
+    dir_names = ['train', 'dev', 'test', 'train_dev','ctd']
     sub_dirs = []
     for name in dir_names:
         sub_dirs.append(os.path.join(ncbi_dir, name))
@@ -38,7 +38,7 @@ def read_dataset(ncbi_dir):
     max_degree = 0
     for name, sub_dir in zip(dir_names, sub_dirs):
         degree, trees = utils.read_trees(os.path.join(sub_dir,'name.parents'))
-        sentences = utils.read_sentences(os.path.join(sub_dir, 'name.toks'), vocab)
+        sentences = utils.read_sentences(os.path.join(sub_dir, 'name.toksl'), vocab)
         meshes = read_mesh(os.path.join(sub_dir, 'mesh.txt'))
         names = read_name(os.path.join(sub_dir, 'name.txt'))
         for sentence, tree in zip(sentences, trees):
@@ -198,6 +198,7 @@ def evaluate_dataset(model, dataset, ctdset, output):
     output.write('cm_num_total: %d\n' % cm_num_total)
     output.write('num_pred_correct: %d\n' % num_correct)
     output.write('num_pred_total: %d\n' % num_pred)
+    output.write('total score: %f\n' % (float(num_correct+cm_num_correct)/float(num_pred+cm_num_total)))
     del rsents
     gc.collect()
     return float(num_correct) / float(num_pred)
@@ -219,7 +220,7 @@ def train_test():
     output = open(output_path, 'w')
 
     vocab, data = read_dataset(data_dir)
-    train_set, dev_set, test_set, ctd_set = data['train'], data['dev'], data['test'], data['ctd']
+    train_set, dev_set, test_set, td_set, ctd_set = data['train'], data['dev'], data['test'], data['train_dev'], data['ctd']
     max_degree = data['max_degree']
     
     output.write('train : %d\n' % len(train_set['trees']))
@@ -237,11 +238,11 @@ def train_test():
     np.random.seed(SEED)
     model = RelatenessModel(num_emb, max_degree, False)
     
-    old_model_path =  '../outputs/2016-11-12-13-21-57/2016-11-12-13-21-57.model'
+    old_model_path =  '../outputs/2016-11-17-10-33-19/2016-11-17-10-33-19.model'
     utils.load_model(model, old_model_path)
 
-    old_ws_path = '../outputs/2016-11-12-13-21-57/2016-11-12-13-21-57.wstrain'
-    load_wrongsamples(train_set, old_ws_path)
+    old_ws_path = '../outputs/2016-11-17-10-33-19/2016-11-17-10-33-19.wstrain'
+    load_wrongsamples(test_set, old_ws_path)
 
     output.write('trainable embeddings: %s\n' % str(model.trainable_embeddings))
     output.write('reg : %f\n' % model.reg)
@@ -250,7 +251,7 @@ def train_test():
     output.write('hidden dim: %d\n' % model.hidden_dim)
     output.write('learing_rate: %f\n\n' % model.learning_rate)
     output.flush()
-
+    
     embeddings = model.embeddings.get_value()
     glove_vecs = np.load(os.path.join(data_dir, 'glove.npy'))
     glove_words = np.load(os.path.join(data_dir, 'words.npy'))
@@ -260,9 +261,13 @@ def train_test():
             embeddings[i] = glove_vecs[glove_word2idx[word]]
     glove_vecs, glove_words, glove_word2idx = [], [], []
     model.embeddings.set_value(embeddings)
+
+    evaluate_dataset(model, dev_set, ctd_set, output)
+    output.write('\n\n\n\n\n')
+    output.flush()
     
-    for epoch in xrange(NUM_EPOCHS):
-        output.write('epoch: %d\n' % epoch)
+    for epoch in xrange(25):
+        output.write('\nepoch: %d\n' % epoch)
         score = train_dataset(model, train_set, ctd_set)
         score = evaluate_dataset(model, train_set, ctd_set, output)
         output.write('train score: %f\n' % score)
