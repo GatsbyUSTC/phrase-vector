@@ -236,7 +236,7 @@ def train_test():
     output.write('learing_rate: %f\n\n' % model.learning_rate)
     output.flush()
     
-    embeddings = model.embeddings.get_value()
+    embeddings = model.embeddings.get_value(borrow=True)
     glove_vecs = np.load(os.path.join(data_dir, 'glove.npy'))
     glove_words = np.load(os.path.join(data_dir, 'words.npy'))
     glove_word2idx = dict((word, i) for i, word in enumerate(glove_words))
@@ -244,7 +244,7 @@ def train_test():
         if word in glove_word2idx:
             embeddings[i] = glove_vecs[glove_word2idx[word]]
     glove_vecs, glove_words, glove_word2idx = [], [], []
-    model.embeddings.set_value(embeddings)
+    model.embeddings.set_value(embeddings, borrow=True)
 
     # evaluate_dataset(model, dev_set, ctd_set, output)
     # output.write('\n\n')

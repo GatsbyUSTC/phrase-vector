@@ -29,7 +29,7 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
         self.max_label = MAX_LABEL
         self.reg = REG
 
-        self.embeddings = theano.shared(self.init_matrix([self.num_emb, self.emb_dim]))
+        self.embeddings = theano.shared(self.init_matrix([self.num_emb, self.emb_dim]), borrow=True)
 
 
         self.output_fn = self.create_output_fn()
@@ -40,32 +40,32 @@ class RelatenessModel(treelstm.ChildSumTreeLSTM):
         self._train, self._train_em, self._predict, self._generate, self._score = self._create_train_and_predict() 
 
     def _create_train_and_predict(self):
-        lx = T.ivector(name='lx')
-        rx = T.ivector(name='rx')
-        ltree = T.imatrix(name='ltree')
-        rtree = T.imatrix(name='rtree')
-        p = T.vector(name='p', dtype=theano.config.floatX)
+        self.lx = T.ivector(name='lx')
+        self.rx = T.ivector(name='rx')
+        self.ltree = T.imatrix(name='ltree')
+        self.rtree = T.imatrix(name='rtree')
+        self.p = T.vector(name='p', dtype=theano.config.floatX)
 
-        lemb_x = self.embeddings[lx] * T.neq(lx, -1).dimshuffle(0, 'x')
-        remb_x = self.embeddings[rx] * T.neq(rx, -1).dimshuffle(0, 'x')
+        lemb_x = self.embeddings[self.lx] * T.neq(self.lx, -1).dimshuffle(0, 'x')
+        remb_x = self.embeddings[self.rx] * T.neq(self.rx, -1).dimshuffle(0, 'x')
 
         
         # lsent = self.leaf_unit(self.embeddings[lx[0]])[0] if lx.shape[0] == 1 else self.compute_tree(lemb_x, ltree)
         # rsent = self.leaf_unit(self.embeddings[rx[0]])[0] if rx.shape[0] == 1 else self.compute_tree(remb_x, rtree)
-        lsent = self.compute_tree(lemb_x, ltree)
-        rsent = self.compute_tree(remb_x, rtree)
+        self.lsent = self.compute_tree(lemb_x, self.ltree)
+        self.rsent = self.compute_tree(remb_x, self.rtree)
 
-        pred_p = self.output_fn(lsent, rsent) 
+        self.pred_p = self.output_fn(self.lsent, self.rsent) 
         
-        loss = self.kl_divergence(p, pred_p)
-        updates = self.gradient_descent(loss)
-        em_updates = self.gd_embeddings(loss)
+        self.loss = self.kl_divergence(self.p, self.pred_p)
+        updates = self.gradient_descent(self.loss)
+        em_updates = self.gd_embeddings(self.loss)
 
-        _train = theano.function([lx, rx, ltree, rtree, p] , [loss], updates=updates) 
-        _train_em = theano.function([lx, rx, ltree, rtree, p], [loss], updates=em_updates)
-        _predict = theano.function([lx, rx, ltree, rtree] , [pred_p])
-        _generate = theano.function([lx, ltree], [lsent])
-        _score = theano.function([lsent, rsent], [pred_p])
+        _train = theano.function([self.lx, self.rx, self.ltree, self.rtree, self.p] , [self.loss], updates=updates) 
+        _train_em = theano.function([self.lx, self.rx, self.ltree, self.rtree, self.p], [self.loss], updates=em_updates)
+        _predict = theano.function([self.lx, self.rx, self.ltree, self.rtree] , [self.pred_p])
+        _generate = theano.function([self.lx, self.ltree], [self.lsent])
+        _score = theano.function([self.lsent, self.rsent], [self.pred_p])
 
         return _train, _train_em, _predict, _generate, _score
         
