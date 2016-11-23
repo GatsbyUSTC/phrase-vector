@@ -7,47 +7,6 @@ from nltk.stem.porter import PorterStemmer
 from nltk.stem import WordNetLemmatizer
 import utils
 
-def create_ctd(ncbi_dir, cp):
-
-    ctdpath = os.path.join(ncbi_dir, 'CTD_diseases-2015-06-04.tsv')
-    ctddir = os.path.join(ncbi_dir, 'ctd')
-    if not os.path.exists(ctddir):
-        os.mkdir(ctddir)
-
-    namepath = os.path.join(ctddir, 'name.txt')
-    meshpath = os.path.join(ctddir, 'mesh.txt')
-
-    with open(ctdpath, 'r') as ctd,\
-        open(namepath, 'w') as ctdname,\
-        open(meshpath, 'w') as ctdmesh:
-        namelist, meshlist = [], []
-        for i in xrange(28):
-            ctd.readline()
-        for line in ctd:
-            content = line.split('\t')
-            name = content[0].strip()
-            mesh = content[1]
-            syns = content[7].strip().split('|')
-            if name != '':
-                parts = name.replace('-', ' ').replace('/', ' ').split(' ')
-                for i, part in enumerate(parts):
-                    # if any(ch > 'a' and ch < 'z' for ch in part):
-                    parts[i] = part.lower()
-                name = ' '.join(parts)
-                ctdname.write(name + '\n')
-                ctdmesh.write(mesh + '\n')
-            for syn in syns:
-                if syn != '': 
-                    parts = syn.replace('-', ' ').replace('/', ' ').split(' ')
-                    for i, part in enumerate(parts):
-                        # if any(ch > 'a' and ch < 'z' for ch in part):
-                        parts[i] = part.lower()
-                    syn = ' '.join(parts)
-                    ctdname.write(syn + '\n')
-                    ctdmesh.write(mesh + '\n') 
-        ctdname.flush()
-    dependency_parse(namepath, cp)
-
 def get_abbr(abbrpath):
     abbr = {}
     with open(abbrpath, 'r') as f:
@@ -86,6 +45,49 @@ def get_pmids(pmidpath):
             pmids.append(line.strip())        
     return pmids
 
+def create_ctd(ncbi_dir, cp):
+
+    ctdpath = os.path.join(ncbi_dir, 'CTD_diseases-2015-06-04.tsv')
+    ctddir = os.path.join(ncbi_dir, 'ctd')
+    if not os.path.exists(ctddir):
+        os.mkdir(ctddir)
+
+    namepath = os.path.join(ctddir, 'name.txt')
+    meshpath = os.path.join(ctddir, 'mesh.txt')
+
+    with open(ctdpath, 'r') as ctd,\
+        open(namepath, 'w') as ctdname,\
+        open(meshpath, 'w') as ctdmesh:
+        namelist, meshlist = [], []
+        for i in xrange(28):
+            ctd.readline()
+        for line in ctd:
+            content = line.split('\t')
+            name = content[0].strip()
+            mesh = content[1]
+            syns = content[7].strip().split('|')
+            if name != '':
+                name = name.replace('-', ' ').replace('/', ' ').replace('&', ' ')
+                parts = name.split()
+                for i, part in enumerate(parts):
+                    if any(ch > 'a' and ch < 'z' for ch in part):
+                        parts[i] = part.lower()
+                name = ' '.join(parts)
+                ctdname.write(name + '\n')
+                ctdmesh.write(mesh + '\n')
+            for syn in syns:
+                if syn != '': 
+                    name = syn.replace('-', ' ').replace('/', ' ').replace('&', ' ')
+                    parts= name.split()
+                    for i, part in enumerate(parts):
+                        # if any(ch > 'a' and ch < 'z' for ch in part):
+                        parts[i] = part.lower()
+                    syn = ' '.join(parts)
+                    ctdname.write(syn + '\n')
+                    ctdmesh.write(mesh + '\n') 
+        ctdname.flush()
+    dependency_parse(namepath, cp)
+
 def create_corpus(ncbi_dir, cp):
     sname = ['train', 'dev', 'test', 'train_dev']
     corpus = get_corpus(os.path.join(ncbi_dir, 'Corpus.txt'))
@@ -109,13 +111,14 @@ def create_corpus(ncbi_dir, cp):
                     dmesh = disease[1]
                     if pmid in abbr and dname in abbr[pmid]:
                         dname = abbr[pmid][dname]
-                    parts = dname.replace('-', ' ').replace('/', ' ').split(' ')
+                    name = dname.replace('-', ' ').replace('/', ' ').replace('&', ' ')
+                    parts = name.split(' ')
                     for i, part in enumerate(parts):
                         if pmid in abbr and part in abbr[pmid]:
                             part = abbr[pmid][part]
                             parts[i] = part
-                        # if any(ch > 'a' and ch < 'z' for ch in part):
-                        parts[i] = part.lower()
+                        if any(ch > 'a' and ch < 'z' for ch in part):
+                            parts[i] = part.lower()
                     dname = ' '.join(parts)
                     name.write(dname+'\n')
                     if dmesh.find(':') != -1:
@@ -160,6 +163,28 @@ def build_vocab(filepaths, dst_path, lowercase=True):
         for w in sorted(vocab):
             f.write(w + '\n')
 
+def stem(filepaths):
+    dstpaths = [filepath+'s' for filepath in filepaths]
+    stemmer = PorterStemmer()
+    for filepath, dstpaths in zip(filepaths, dstpaths):
+        with open(filepath, 'r') as inf, open(dstpaths, 'w') as ouf:
+            for line in inf:
+                words = line.strip().split()
+                stem_words = [stemmer.stem(word.decode('utf-8')).encode('utf-8') for word in words]
+                stem_line = ' '.join(stem_words)
+                ouf.write(stem_line + '\n')
+
+def lemmatize(filepaths):
+    dstpaths = [filepath+'l' for filepath in filepaths]
+    wnl = WordNetLemmatizer()
+    for filepath, dstpaths in zip(filepaths, dstpaths):
+        with open(filepath, 'r') as inf, open(dstpaths, 'w') as ouf:
+            for line in inf:
+                words = line.strip().split()
+                stem_words = [wnl.lemmatize(word.decode('utf-8')).encode('utf-8') for word in words]
+                stem_line = ' '.join(stem_words)
+                ouf.write(stem_line + '\n')
+
 def read_embeddings_into_numpy(ncbi_dir):
     vocab_path = os.path.join(ncbi_dir, 'vocab-cased.txt')
     glove_path = '../../data/glove.840B.300d.txt'
@@ -184,28 +209,6 @@ def read_embeddings_into_numpy(ncbi_dir):
     print 'vocab size: ', vocab.size()
     print 'known words: ', len(words)
     print 'unknown words: ', (vocab.size() - len(words)) 
-
-def stem(filepaths):
-    dstpaths = [filepath+'s' for filepath in filepaths]
-    stemmer = PorterStemmer()
-    for filepath, dstpaths in zip(filepaths, dstpaths):
-        with open(filepath, 'r') as inf, open(dstpaths, 'w') as ouf:
-            for line in inf:
-                words = line.strip().split()
-                stem_words = [stemmer.stem(word.decode('utf-8')).encode('utf-8') for word in words]
-                stem_line = ' '.join(stem_words)
-                ouf.write(stem_line + '\n')
-
-def lemmatize(filepaths):
-    dstpaths = [filepath+'l' for filepath in filepaths]
-    wnl = WordNetLemmatizer()
-    for filepath, dstpaths in zip(filepaths, dstpaths):
-        with open(filepath, 'r') as inf, open(dstpaths, 'w') as ouf:
-            for line in inf:
-                words = line.strip().split()
-                stem_words = [wnl.lemmatize(word.decode('utf-8')).encode('utf-8') for word in words]
-                stem_line = ' '.join(stem_words)
-                ouf.write(stem_line + '\n')
 
 def read_w2v_into_numpy(ncbi_dir):
     vocab_path = os.path.join(ncbi_dir, 'vocab-cased.txt')

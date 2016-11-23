@@ -9,7 +9,6 @@ from vocab import Vocab
 
 SEED = 93
 MAX_LABEL = 5 #label y in [1,K]
-NUM_EPOCHS = 10
 
 def read_mesh(meshpath):
     meshes = []
@@ -103,23 +102,13 @@ def train_dataset(model, dataset, ctdset):
         last_index = first_index + len(rroots_plus)
         before_index = max(0, first_index - 10)
         after_index = min(last_index + 10, len(ctdset['meshes']))
-        if before_index < first_index:
-            for random_index in xrange(before_index, first_index):
-                if ctdset['meshes'][random_index] == lmesh:
-                    continue
-                rroot = ctdset['trees'][random_index]
-                rroots_minus.append(rroot)
-                rsent = model.generate(rroot)
-                rsents_minus.append(rsent)
-        if after_index > last_index:
-            for random_index in xrange(last_index, after_index):
-                if ctdset['meshes'][random_index] == lmesh:
-                    continue
-                rroot = ctdset['trees'][random_index]
-                rroots_minus.append(rroot)
-                rsent = model.generate(rroot)
-                rsents_minus.append(rsent) 
-
+        for index in xrange(before_index, after_index):
+            if ctdset['meshes'][index] == lmesh:
+                continue
+            rroot = ctdset['trees'][index]
+            rroots_minus.append(rroot)
+            rsent = model.generate(rroot)
+            rsents_minus.append(rsent)
         while len(rroots_minus) < 140:
             random_index = random.randint(0, len(ctdset['meshes'])-1)
             if ctdset['meshes'][random_index] == lmesh:
@@ -193,7 +182,7 @@ def evaluate_datasets(model, datasets, ctdset, output):
         output.write('cm_num_total: %d\n' % cm_num_total)
         output.write('num_pred_correct: %d\n' % num_correct)
         output.write('num_pred_total: %d\n' % num_pred)
-        output.write('score: %f\n' % (float(num_correct)/float(num_pred)))
+        output.write('predict score: %f\n' % (float(num_correct)/float(num_pred)))
         output.write('total score: %f\n' % (float(num_correct+cm_num_correct)/float(num_pred+cm_num_total)))
     del rsents
     gc.collect()
@@ -258,7 +247,7 @@ def train_test():
     model.embeddings.set_value(embeddings)
 
     # evaluate_dataset(model, dev_set, ctd_set, output)
-    # output.write('\n\n\n\n\n')
+    # output.write('\n\n')
     # output.flush()
     
     for epoch in xrange(15):
