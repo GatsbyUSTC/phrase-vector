@@ -72,9 +72,10 @@ def train_dataset(model, dataset, ctdset):
     
     right_num, train_num = 0, 0
 
-    for i, (lmesh, lroot) in enumerate(zip(dataset['meshes'], dataset['trees'])):
-        if lmesh not in ctdset['meshes']:
+    for i, (lname, lmesh, lroot) in enumerate(zip(dataset['names'], dataset['meshes'], dataset['trees'])):
+        if lmesh not in ctdset['meshes'] or lname in ctdset['names']: #change on nov 23, skip trainning samples that already in ctdset
             continue
+
         score_plus, score_minus = [], []
         rsents_plus, rsents_minus = [], []
         rroots_plus, rroots_minus = [], []
@@ -176,7 +177,6 @@ def evaluate_datasets(model, datasets, ctdset, output):
                 dataset['wsw'].append(prindex)
             num_pred += 1
             del pred_ys
-            gc.collect()
         output.write("\nno that mesh: %d\n" % no_that_mesh)
         output.write('cm_num_correct: %d\n' % cm_num_correct)
         output.write('cm_num_total: %d\n' % cm_num_total)
@@ -255,6 +255,7 @@ def train_test():
         train_dataset(model, train_set, ctd_set)
         evaluate_datasets(model, [train_set, dev_set], ctd_set, output)
         output.flush()
+    
     utils.save_model(model, model_path)
     output.write('\nevaluate on test set\n')
     evaluate_datasets(model, [test_set], ctd_set, output)

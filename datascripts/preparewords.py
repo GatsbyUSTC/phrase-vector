@@ -44,7 +44,7 @@ def conv_sen_into_words(filepaths, dstfilepath):
                 line = line.replace('-', ' ').replace('/', ' ').replace('&', ' ')
                 parts = line.split()
                 for i, part in enumerate(parts):
-                    if any(ch > 'a' and ch < 'z' for ch in part):
+                    if any(ch >= 'a' and ch <= 'z' for ch in part):
                         parts[i] = part.lower()
                 stem_parts = [stemmer.stem(part.decode('utf-8')).encode('utf-8') for part in parts]
                 stem_line = ' '.join(stem_parts).strip()

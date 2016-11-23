@@ -45,6 +45,21 @@ def get_pmids(pmidpath):
             pmids.append(line.strip())        
     return pmids
 
+def write_nm(name, mesh, namef, meshf):
+    if name.strip() == '':
+        return 
+    name = name.replace('-', ' ').replace('/', ' ').replace('&', ' ')
+    parts = name.split()
+    for i, part in enumerate(parts):
+        if any(ch >= 'a' and ch <= 'z' for ch in part):
+            parts[i] = part.lower()
+    name = ' '.join(parts)
+    namef.write(name + '\n')
+    if mesh.find(':') != -1:
+        meshf.write(mesh+'\n')
+    else:
+        meshf.write('MESH:'+mesh+'\n')
+
 def create_ctd(ncbi_dir, cp):
 
     ctdpath = os.path.join(ncbi_dir, 'CTD_diseases-2015-06-04.tsv')
@@ -66,30 +81,14 @@ def create_ctd(ncbi_dir, cp):
             name = content[0].strip()
             mesh = content[1]
             syns = content[7].strip().split('|')
-            if name != '':
-                name = name.replace('-', ' ').replace('/', ' ').replace('&', ' ')
-                parts = name.split()
-                for i, part in enumerate(parts):
-                    if any(ch > 'a' and ch < 'z' for ch in part):
-                        parts[i] = part.lower()
-                name = ' '.join(parts)
-                ctdname.write(name + '\n')
-                ctdmesh.write(mesh + '\n')
+            write_nm(name, mesh, ctdname, ctdmesh)
             for syn in syns:
-                if syn != '': 
-                    name = syn.replace('-', ' ').replace('/', ' ').replace('&', ' ')
-                    parts= name.split()
-                    for i, part in enumerate(parts):
-                        # if any(ch > 'a' and ch < 'z' for ch in part):
-                        parts[i] = part.lower()
-                    syn = ' '.join(parts)
-                    ctdname.write(syn + '\n')
-                    ctdmesh.write(mesh + '\n') 
+                write_nm(syn, mesh, ctdname, ctdmesh)
         ctdname.flush()
     dependency_parse(namepath, cp)
 
 def create_corpus(ncbi_dir, cp):
-    sname = ['train', 'dev', 'test', 'train_dev']
+    sname = ['train', 'dev', 'test']
     corpus = get_corpus(os.path.join(ncbi_dir, 'Corpus.txt'))
     abbr = get_abbr(os.path.join(ncbi_dir, 'abbreviations.tsv'))
     for cname in sname:
@@ -101,7 +100,7 @@ def create_corpus(ncbi_dir, cp):
         namepath = os.path.join(dir, 'name.txt')
         meshpath = os.path.join(dir, 'mesh.txt')
         dpmidpath = os.path.join(dir, 'pmid.txt')
-        with open(namepath, 'w') as name, open(meshpath, 'w') as mesh, open(dpmidpath,'w') as dpmid:
+        with open(namepath, 'w') as namef, open(meshpath, 'w') as meshf, open(dpmidpath,'w') as dpmidf:
             for pmid in pmids:
                 if pmid not in corpus:
                     continue
@@ -109,25 +108,16 @@ def create_corpus(ncbi_dir, cp):
                 for disease in diseases:
                     dname = disease[0]
                     dmesh = disease[1]
-                    if pmid in abbr and dname in abbr[pmid]:
-                        dname = abbr[pmid][dname]
-                    name = dname.replace('-', ' ').replace('/', ' ').replace('&', ' ')
-                    parts = name.split(' ')
+                    parts = dname.split()
                     for i, part in enumerate(parts):
                         if pmid in abbr and part in abbr[pmid]:
                             part = abbr[pmid][part]
                             parts[i] = part
-                        if any(ch > 'a' and ch < 'z' for ch in part):
-                            parts[i] = part.lower()
-                    dname = ' '.join(parts)
-                    name.write(dname+'\n')
-                    if dmesh.find(':') != -1:
-                        mesh.write(dmesh+'\n')
-                    else:
-                        mesh.write('MESH:'+dmesh+'\n')
-                    dpmid.write(pmid+'\n')
-            name.flush()
-            dependency_parse(namepath, cp)
+                    dname = ' '.join(parts).strip()
+                    write_nm(dname, dmesh, namef, meshf)
+                    dpmidf.write(pmid+'\n')
+            namef.flush()
+        dependency_parse(namepath, cp)
     
 def dependency_parse(filepath, cp='', tokenize=True):
     print('\nDependency parsing ' + filepath)
