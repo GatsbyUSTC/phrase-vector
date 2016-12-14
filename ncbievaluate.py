@@ -24,6 +24,13 @@ def read_name(namepath):
             names.append(line.strip())
     return names
 
+def read_lines(tokenpath):
+    lines = []
+    with open(tokenpath, 'r') as f:
+        for line in f:
+            lines.append(set(line.split()))
+    return lines
+
 def read_dataset(ncbi_dir):
     vocab = Vocab()
     vocab.load(os.path.join(ncbi_dir, 'vocab-cased.txt'))
@@ -40,12 +47,14 @@ def read_dataset(ncbi_dir):
         sentences = utils.read_sentences(os.path.join(sub_dir, 'name.tokss'), vocab)
         meshes = read_mesh(os.path.join(sub_dir, 'mesh.txt'))
         names = read_name(os.path.join(sub_dir, 'name.txt'))
+        lines = read_lines(os.path.join(sub_dir, 'name.tokss'))
         for sentence, tree in zip(sentences, trees):
             utils.map_tokens_labels(tree, sentence, False)
         cur_dataset = {}
         cur_dataset['trees'] = trees
         cur_dataset['meshes'] = meshes
         cur_dataset['names'] = names
+        cur_dataset['lines'] = lines
         cur_dataset['wso'] = []
         cur_dataset['wsw'] = []
         data[name] = cur_dataset
@@ -143,10 +152,11 @@ def train_dataset(model, dataset, ctdset):
 
 def evaluate_datasets(model, datasets, ctdset, output):
     rsents = []
-    for rroot in ctdset['trees']:
+    all_tokens = set()
+    for rroot, rline in zip(ctdset['trees'], ctdset['lines']):
         rsent = model.generate(rroot)
         rsents.append(rsent)
-
+        all_tokens.update(rline)
     for dataset in datasets:
         num_correct, num_pred = 0, 0
         cm_num_correct, cm_num_total = 0, 0
@@ -154,7 +164,8 @@ def evaluate_datasets(model, datasets, ctdset, output):
         del dataset['wso']
         del dataset['wsw']
         dataset['wso'], dataset['wsw'] = [], []
-        for i, (lname, lmesh, lroot) in enumerate(zip(dataset['names'], dataset['meshes'], dataset['trees'])):
+
+        for i, (lname, lmesh, lroot, lline) in enumerate(zip(dataset['names'], dataset['meshes'], dataset['trees'], dataset['lines'])):
             if lmesh not in ctdset['meshes']:
                 no_that_mesh += 1            
                 continue
@@ -165,11 +176,22 @@ def evaluate_datasets(model, datasets, ctdset, output):
                 continue
             lsent = model.generate(lroot)
             pred_ys = []
-            for rsent in rsents:
-                pred_y = model.getscore(lsent, rsent)
-                pred_ys.append(pred_y)
-
+            if not all_tokens.isdisjoint(lline):
+                for j, (rsent, rline) in enumerate(zip(rsents, ctdset['lines'])):
+                    if lline & rline == set([]):
+                        pred_y = 1
+                    else:
+                        pred_y = model.getscore(lsent, rsent)
+                        print rline, pred_y
+                    pred_ys.append(pred_y)
+            else:
+                for rsent in rsents:
+                    pred_y = model.getscore(lsent, rsent)
+                    pred_ys.append(pred_y)
+                
+            
             prindex = pred_ys.index(max(pred_ys))
+            print prindex
             if lmesh == ctdset['meshes'][prindex]:
                 num_correct += 1
             else:
@@ -177,13 +199,13 @@ def evaluate_datasets(model, datasets, ctdset, output):
                 dataset['wsw'].append(prindex)
             num_pred += 1
             del pred_ys
-        output.write("\nno that mesh: %d\n" % no_that_mesh)
-        output.write('cm_num_correct: %d\n' % cm_num_correct)
-        output.write('cm_num_total: %d\n' % cm_num_total)
-        output.write('num_pred_correct: %d\n' % num_correct)
-        output.write('num_pred_total: %d\n' % num_pred)
-        output.write('predict score: %f\n' % (float(num_correct)/float(num_pred)))
-        output.write('total score: %f\n' % (float(num_correct+cm_num_correct)/float(num_pred+cm_num_total)))
+        # output.write("\nno that mesh: %d\n" % no_that_mesh)
+        # output.write('cm_num_correct: %d\n' % cm_num_correct)
+        # output.write('cm_num_total: %d\n' % cm_num_total)
+        # output.write('num_pred_correct: %d\n' % num_correct)
+        # output.write('num_pred_total: %d\n' % num_pred)
+        # output.write('predict score: %f\n' % (float(num_correct)/float(num_pred)))
+        # output.write('total score: %f\n' % (float(num_correct+cm_num_correct)/float(num_pred+cm_num_total)))
     del rsents
     gc.collect()
 
@@ -222,10 +244,10 @@ def train_test():
     np.random.seed(SEED)
     model = RelatenessModel(num_emb, max_degree, False)
     
-    # old_model_path =  '../outputs/2016-11-17-10-43-23/2016-11-17-10-43-23.model'
-    # utils.load_model(model, old_model_path)
+    old_model_path =  '../outputs/2016-11-23-00-27-41/2016-11-23-00-27-41.model'
+    utils.load_model(model, old_model_path)
 
-    # old_ws_path = '../outputs/2016-11-17-10-43-23/2016-11-17-10-43-23.wstrain'
+    # old_ws_path = '../outputs/2016-11-23-00-27-41/2016-11-23-00-27-41.wstrain'
     # load_wrongsamples(test_set, old_ws_path)
 
     output.write('trainable embeddings: %s\n' % str(model.trainable_embeddings))
@@ -236,29 +258,29 @@ def train_test():
     output.write('learing_rate: %f\n\n' % model.learning_rate)
     output.flush()
     
-    embeddings = model.embeddings.get_value(borrow=True)
-    glove_vecs = np.load(os.path.join(data_dir, 'glove.npy'))
-    glove_words = np.load(os.path.join(data_dir, 'words.npy'))
-    glove_word2idx = dict((word, i) for i, word in enumerate(glove_words))
-    for i, word in enumerate(vocab.words):
-        if word in glove_word2idx:
-            embeddings[i] = glove_vecs[glove_word2idx[word]]
-    glove_vecs, glove_words, glove_word2idx = [], [], []
-    model.embeddings.set_value(embeddings, borrow=True)
+    # embeddings = model.embeddings.get_value(borrow=True)
+    # glove_vecs = np.load(os.path.join(data_dir, 'glove.npy'))
+    # glove_words = np.load(os.path.join(data_dir, 'words.npy'))
+    # glove_word2idx = dict((word, i) for i, word in enumerate(glove_words))
+    # for i, word in enumerate(vocab.words):
+    #     if word in glove_word2idx:
+    #         embeddings[i] = glove_vecs[glove_word2idx[word]]
+    # glove_vecs, glove_words, glove_word2idx = [], [], []
+    # model.embeddings.set_value(embeddings, borrow=True)
 
     # evaluate_dataset(model, dev_set, ctd_set, output)
     # output.write('\n\n')
     # output.flush()
     
-    for epoch in xrange(25):
-        output.write('\nepoch: %d\n' % epoch)
-        train_dataset(model, train_set, ctd_set)
-        evaluate_datasets(model, [train_set, dev_set], ctd_set, output)
-        output.flush()
+    # for epoch in xrange(15):
+    #     output.write('\nepoch: %d\n' % epoch)
+    #     train_dataset(model, train_set, ctd_set)
+    #     evaluate_datasets(model, [train_set, dev_set], ctd_set, output)
+    #     output.flush()
     
-    utils.save_model(model, model_path)
+    # utils.save_model(model, model_path)
     output.write('\nevaluate on test set\n')
-    evaluate_datasets(model, [test_set], ctd_set, output)
+    evaluate_datasets(model, [dev_set, test_set], ctd_set, output)
     for name in ['train', 'dev', 'test']:
         ws_name = curtime + '.ws' + name
         ws_path = os.path.join(output_dir, ws_name)

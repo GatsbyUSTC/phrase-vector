@@ -1,22 +1,16 @@
 import os
 import glob
 import random
+import shutil
 import numpy as np
+import Levenshtein
 from vocab import Vocab
 from nltk.stem.porter import PorterStemmer
 from nltk.stem import WordNetLemmatizer
+from stop_words import get_stop_words
 import utils
 
-def get_abbr(abbrpath):
-    abbr = {}
-    with open(abbrpath, 'r') as f:
-        for line in f:
-            pmid, short, full = line.strip().split('\t')
-            if pmid not in abbr:
-                abbr[pmid] = {}
-            abbr[pmid][short] = full
-    
-    return abbr
+
 
 
 def get_corpus(corpuspath):
@@ -38,87 +32,197 @@ def get_corpus(corpuspath):
             source[pmid] = name_mesh
     return source
 
-def get_pmids(pmidpath):
-    pmids = []
-    with open(pmidpath, 'r') as f:
-        for line in f:
-            pmids.append(line.strip())        
-    return pmids
 
-def write_nm(name, mesh, namef, meshf):
-    if name.strip() == '':
-        return 
-    name = name.replace('-', ' ').replace('/', ' ').replace('&', ' ')
-    parts = name.split()
-    for i, part in enumerate(parts):
-        if any(ch >= 'a' and ch <= 'z' for ch in part):
-            parts[i] = part.lower()
-    name = ' '.join(parts)
-    namef.write(name + '\n')
-    if mesh.find(':') != -1:
-        meshf.write(mesh+'\n')
-    else:
-        meshf.write('MESH:'+mesh+'\n')
 
-def create_ctd(ncbi_dir, cp):
+
+
+def create_ctd(ncbi_dir):
 
     ctdpath = os.path.join(ncbi_dir, 'CTD_diseases-2015-06-04.tsv')
     ctddir = os.path.join(ncbi_dir, 'ctd')
-    if not os.path.exists(ctddir):
-        os.mkdir(ctddir)
+    if os.path.exists(ctddir):
+        shutil.rmtree(ctddir)
+    os.mkdir(ctddir)
+
 
     namepath = os.path.join(ctddir, 'name.txt')
     meshpath = os.path.join(ctddir, 'mesh.txt')
+    alIDpath = os.path.join(ctddir, 'alid.txt')
 
     with open(ctdpath, 'r') as ctd,\
         open(namepath, 'w') as ctdname,\
-        open(meshpath, 'w') as ctdmesh:
+        open(meshpath, 'w') as ctdmesh,\
+        open(alIDpath, 'w') as ctdalid:
         namelist, meshlist = [], []
         for i in xrange(28):
             ctd.readline()
         for line in ctd:
             content = line.split('\t')
-            name = content[0].strip()
-            mesh = content[1]
-            syns = content[7].strip().split('|')
-            write_nm(name, mesh, ctdname, ctdmesh)
-            for syn in syns:
-                write_nm(syn, mesh, ctdname, ctdmesh)
+            names = [content[0].strip()]
+            mesh = content[1].strip()
+            altIDs = content[2].strip()
+            syns = content[7].strip()
+            if syns != '':
+                names.extend(syns.split('|'))
+            for name in names:
+                ctdname.write(name + '\n')
+                ctdmesh.write(mesh + '\n')
+                ctdalid.write(altIDs + '\n')
         ctdname.flush()
-    dependency_parse(namepath, cp)
+        ctdmesh.flush()
+        ctdalid.flush()
 
-def create_corpus(ncbi_dir, cp):
+def create_corpus(ncbi_dir):
     sname = ['train', 'dev', 'test']
     corpus = get_corpus(os.path.join(ncbi_dir, 'Corpus.txt'))
-    abbr = get_abbr(os.path.join(ncbi_dir, 'abbreviations.tsv'))
+    # 
     for cname in sname:
         pmidpath = os.path.join(ncbi_dir, 'NCBI_corpus_'+cname+'_PMIDs.txt')
-        pmids = get_pmids(pmidpath)
-        dir = os.path.join(ncbi_dir, cname)
-        if not os.path.exists(dir):
-            os.mkdir(dir)
-        namepath = os.path.join(dir, 'name.txt')
-        meshpath = os.path.join(dir, 'mesh.txt')
-        dpmidpath = os.path.join(dir, 'pmid.txt')
+        pmids = []
+        with open(pmidpath, 'r') as f:
+            for line in f:
+                pmids.append(line.strip()) 
+        
+        subdir = os.path.join(ncbi_dir, cname)
+        if os.path.exists(subdir):
+            shutil.rmtree(subdir)
+        os.mkdir(subdir)
+
+        namepath = os.path.join(subdir, 'name.txt')
+        meshpath = os.path.join(subdir, 'mesh.txt')
+        dpmidpath = os.path.join(subdir, 'pmid.txt')
         with open(namepath, 'w') as namef, open(meshpath, 'w') as meshf, open(dpmidpath,'w') as dpmidf:
             for pmid in pmids:
                 if pmid not in corpus:
                     continue
                 diseases = corpus[pmid]
                 for disease in diseases:
-                    dname = disease[0]
-                    dmesh = disease[1]
-                    parts = dname.split()
-                    for i, part in enumerate(parts):
-                        if pmid in abbr and part in abbr[pmid]:
-                            part = abbr[pmid][part]
-                            parts[i] = part
-                    dname = ' '.join(parts).strip()
-                    write_nm(dname, dmesh, namef, meshf)
+                    dname = disease[0].strip()
+                    dmesh = disease[1].strip()
+                    namef.write(dname + '\n')
+                    if ':' not in dmesh:
+                        dmesh = 'MESH:' + dmesh
+                    meshf.write(dmesh + '\n')
                     dpmidf.write(pmid+'\n')
             namef.flush()
-        dependency_parse(namepath, cp)
+            meshf.flush()
+            dpmidf.flush()
+
+def resolve_abbr(ncbi_dir):
+    abbrpath = os.path.join(ncbi_dir, 'abbreviations.tsv')
+    abbr = {}
+    with open(abbrpath, 'r') as f:
+        for line in f:
+            pmid, short, full = line.strip().split('\t')
+            if pmid not in abbr:
+                abbr[pmid] = {}
+            abbr[pmid][short] = full
     
+    dirnames = ['train', 'dev', 'test']
+    for dirname in dirnames:
+        dirpath = os.path.join(ncbi_dir, dirname)
+        namepath = os.path.join(dirpath, 'name.txt')
+        pmidpath = os.path.join(dirpath, 'pmid.txt')
+        newnamepath = os.path.join(dirpath, 'name.full')
+        with open(namepath, 'r') as namef,\
+            open(pmidpath, 'r') as pmidf,\
+            open(newnamepath, 'w') as newnamef:
+            for line, pmid in zip(namef, pmidf):
+                pmid = pmid.strip()
+                if pmid not in abbr.keys():
+                    newnamef.write(line)
+                    continue
+                parts = line.strip().split()
+                for i, part in enumerate(parts):
+                    if part in abbr[pmid].keys():
+                        parts[i] = abbr[pmid][part]
+                newname = ' '.join(parts).strip()
+                newnamef.write(newname + '\n')
+            newnamef.flush()
+    return
+
+# remove some special characters, replace Roman numerals with Arabic numerals, 
+# formmat character case, stem, remove stop words
+def tokenize_phrase(ncbi_dir):
+    r2a_map = {'I':'1', 'II':'2', 'III':'3', 'IV':'4'}
+    stop_words = get_stop_words('en')
+    stemmer = PorterStemmer()
+
+    ctdpath = os.path.join(ncbi_dir, 'ctd')
+    ctdnamepath = os.path.join(ctdpath, 'name.txt')
+    ctdtokenpath = os.path.join(ctdpath, 'name.tokss')
+    namepaths, tokenpaths = [ctdnamepath], [ctdtokenpath]
+    dirnames = ['train', 'dev', 'test']
+    for dirname in dirnames:
+        dirpath = os.path.join(ncbi_dir, dirname)
+        namepath = os.path.join(dirpath, 'name.full')
+        tokenpath = os.path.join(dirpath, 'name.toks')
+        namepaths.append(namepath)
+        tokenpaths.append(tokenpath)
+    
+    for namepath, tokenpath in zip(namepaths, tokenpaths):
+        with open(namepath, 'r') as namef,\
+            open(tokenpath, 'w') as tokenf:
+            for phrase in namef:
+                phrase = phrase.strip().replace('-', ' ').replace('/', ' ')
+                phrase = phrase.replace('&', ' ').replace(',', ' ')
+                phrase = phrase.replace('(', ' ').replace(')', ' ')
+                phrase = phrase.replace(';', ' ')
+                parts = phrase.split()
+                for i, part in enumerate(parts):
+                    if part in r2a_map.keys():
+                        part = r2a_map[part]
+                    if any(ch >= 'a' and ch <= 'z' for ch in part):
+                        part = part.lower()
+                    if len(part) > 3 and (part[-1] >= '0' and part[-1] <= '9') \
+                        and ((part[0] >= 'a' and part[0] <= 'z') or \
+                            (part[0] >= 'A' and part[0] <= 'Z')):
+                        for j, ch in enumerate(part):
+                            if ch >= '0' and ch <= '9':
+                                break
+                        part = part[:j] + ' ' + part[j:]
+                        # print part
+                    parts[i] = stemmer.stem(part.decode('utf-8')).encode('utf-8')
+                new_parts = [part.strip() for part in parts \
+                            if part.decode('utf-8') not in stop_words]
+                phrase = ' '.join(parts).strip() if len(new_parts) < 1 else ' '.join(new_parts).strip()
+                tokenf.write(phrase + '\n')
+            tokenf.flush()
+    return 
+
+def resolve_ambiguity(ncbi_dir):
+    ctdpath = os.path.join(ncbi_dir, 'ctd')
+    ctdtokenpath = os.path.join(ctdpath, 'name.tokss')
+    ctd_vocab = set()
+    with open(ctdtokenpath, 'r') as ctdtokenf:
+        for line in ctdtokenf:
+            words = line.strip().split()
+            ctd_vocab.update(words)
+    
+    dirnames = ['train', 'dev', 'test']
+    for dirname in dirnames:
+        dirpath = os.path.join(ncbi_dir, dirname)
+        tokepath = os.path.join(dirpath, 'name.toks')
+        newtokenpath = os.path.join(dirpath, 'name.tokss')
+        with open(tokepath, 'r') as tokenf,\
+            open(newtokenpath, 'w') as newtokenf:
+            for line in tokenf:
+                tokens = line.strip().split()
+                for i, token in enumerate(tokens):
+                    if token in ctd_vocab or len(token) < 5 or \
+                    not any(ch >= 'a' and ch <= 'z'for ch in token):
+                        continue
+                    candidate_tokens = [word for word in ctd_vocab \
+                                        if Levenshtein.distance(word, token) < 2]
+                    if len(candidate_tokens) > 0:
+                        # print token, candidate_tokens
+                        tokens[i] = candidate_tokens[0]
+
+                newline = ' '.join(tokens).strip()
+                newtokenf.write(newline + '\n')
+            newtokenf.flush()
+    return
+
 def dependency_parse(filepath, cp='', tokenize=True):
     print('\nDependency parsing ' + filepath)
     dirpath = os.path.dirname(filepath)
@@ -141,6 +245,13 @@ def constituency_parse(filepath, cp='', tokenize=True):
         % (cp, tokpath, parentpath, tokenize_flag, filepath))
     os.system(cmd)
 
+def grammar_parse(ncbi_dir, cp):
+    dirnames = ['train', 'dev', 'test', 'ctd']
+    for dirname in dirnames:
+        dirpath = os.path.join(ncbi_dir, dirname)
+        tokenpath = os.path.join(dirpath, 'name.tokss')
+        dependency_parse(tokenpath, cp)
+
 def build_vocab(filepaths, dst_path, lowercase=True):
     vocab = set()
     for filepath in filepaths:
@@ -152,17 +263,6 @@ def build_vocab(filepaths, dst_path, lowercase=True):
     with open(dst_path, 'w') as f:
         for w in sorted(vocab):
             f.write(w + '\n')
-
-def stem(filepaths):
-    dstpaths = [filepath+'s' for filepath in filepaths]
-    stemmer = PorterStemmer()
-    for filepath, dstpaths in zip(filepaths, dstpaths):
-        with open(filepath, 'r') as inf, open(dstpaths, 'w') as ouf:
-            for line in inf:
-                words = line.strip().split()
-                stem_words = [stemmer.stem(word.decode('utf-8')).encode('utf-8') for word in words]
-                stem_line = ' '.join(stem_words)
-                ouf.write(stem_line + '\n')
 
 def lemmatize(filepaths):
     dstpaths = [filepath+'l' for filepath in filepaths]
@@ -249,12 +349,17 @@ if __name__ == '__main__':
             os.path.join(lib_dir, 'stanford-parser/stanford-parser.jar'),
             os.path.join(lib_dir, 'stanford-parser/stanford-parser-3.5.1-models.jar')])
         
-    create_ctd(ncbi_dir, classpath)
-    create_corpus(ncbi_dir, classpath)
+    create_ctd(ncbi_dir)
+    create_corpus(ncbi_dir)
+    
+    # abbreviatons resolve
+    # formmat character case, raplace Roman numerals with Arabic numerals, remove stop words, stem
+    # formmat some words that show in Corpus and not in CTD(resolve ambiguity)
+    resolve_abbr(ncbi_dir)
+    tokenize_phrase(ncbi_dir)
+    resolve_ambiguity(ncbi_dir)
+    grammar_parse(ncbi_dir, classpath)
 
-    stem(glob.glob(os.path.join(ncbi_dir, '*/*.toks')))
-
-    # lemmatize(glob.glob(os.path.join(ncbi_dir, '*/*.toks')))
     build_vocab(
         glob.glob(os.path.join(ncbi_dir, '*/*.tokss')),
         os.path.join(ncbi_dir, 'vocab-cased.txt'),
