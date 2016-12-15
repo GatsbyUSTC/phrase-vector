@@ -361,7 +361,7 @@ if __name__ == '__main__':
     grammar_parse(ncbi_dir, classpath)
 
     build_vocab(
-        glob.glob(os.path.join(ncbi_dir, '*/*.tokss')),
+        glob.glob(os.path.join(ncbi_dir, '*/*.toks')),
         os.path.join(ncbi_dir, 'vocab-cased.txt'),
         lowercase=False)  
 
